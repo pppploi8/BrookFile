@@ -403,6 +403,10 @@ export async function batchDeleteFiles(files: string[], currentPath?: string): P
   return request<ApiResponse<{ failed_files?: string[] }>>({ method: 'POST', url: '/file/batch_delete', data, skipErrorMessage: true, rawResponse: true })
 }
 
+export async function renameFile(path: string, newName: string): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/file/rename', data: { path, new_name: newName } })
+}
+
 export interface BackupRuleListItem {
   id: string
   name: string
@@ -1006,7 +1010,7 @@ export function getAttachmentUrl(notebookId: string, path: string, token: string
   return `/api/notebook/attachment?${params.toString()}`
 }
 
-export async function uploadNotebookAttachment(notebookId: string, path: string, file: File): Promise<ApiResponse> {
+export async function uploadNotebookAttachment(notebookId: string, path: string, file: File): Promise<ApiResponse & { path?: string }> {
   const formData = new FormData()
   formData.append('notebook_id', notebookId)
   formData.append('path', path)

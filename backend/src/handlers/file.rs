@@ -203,6 +203,12 @@ pub struct BatchDeleteRequest {
     pub current_path: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RenameRequest {
+    pub path: String,
+    pub new_name: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct BatchDeleteData {
     pub failed_files: Vec<String>,
@@ -805,6 +811,103 @@ pub async fn move_files(
         fail_code: None,
         conflict_files: None,
         failed_files: None,
+    })
+}
+
+pub async fn rename_file(
+    body: web::Json<RenameRequest>,
+    http_req: HttpRequest,
+    app_state: web::Data<AppState>,
+) -> impl Responder {
+    let root_path = match get_user_root_path(&http_req, &app_state) {
+        Ok(path) => path,
+        Err(resp) => return resp,
+    };
+    let root_path_obj = Path::new(&root_path);
+
+    if body.path.is_empty() || body.path == "." {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("INVALID_FILE_PATH".to_string()),
+        });
+    }
+
+    if !is_safe_path(&body.path) {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("INVALID_FILE_PATH".to_string()),
+        });
+    }
+
+    if !is_safe_name(&body.new_name) {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("INVALID_FILE_NAME".to_string()),
+        });
+    }
+
+    let source_path = root_path_obj.join(&body.path);
+
+    if !source_path.exists() {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("PATH_NOT_FOUND".to_string()),
+        });
+    }
+
+    if !is_path_under_root(&source_path, root_path_obj) {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("PATH_NOT_FOUND".to_string()),
+        });
+    }
+
+    let parent_dir = match source_path.parent() {
+        Some(p) => p.to_path_buf(),
+        None => {
+            return HttpResponse::Ok().json(ApiResponse {
+                success: false,
+                fail_code: Some("INVALID_FILE_PATH".to_string()),
+            });
+        }
+    };
+
+    let dest_path = parent_dir.join(&body.new_name);
+
+    if dest_path.exists() {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("TARGET_ALREADY_EXISTS".to_string()),
+        });
+    }
+
+    if !is_path_under_root(&dest_path, root_path_obj) {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("INVALID_FILE_PATH".to_string()),
+        });
+    }
+
+    if std::fs::rename(&source_path, &dest_path).is_err() {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("RENAME_FAILED".to_string()),
+        });
+    }
+
+    if let Ok(user_id) = get_current_user_id(&http_req, &app_state) {
+        let parent_str = body.path.rfind('/').map(|i| &body.path[..i]).unwrap_or("");
+        let new_relative = if parent_str.is_empty() {
+            body.new_name.clone()
+        } else {
+            format!("{}/{}", parent_str, body.new_name)
+        };
+        cleanup_search_index_on_move(&body.path, &new_relative, &user_id, &app_state);
+    }
+
+    HttpResponse::Ok().json(ApiResponse {
+        success: true,
+        fail_code: None,
     })
 }
 

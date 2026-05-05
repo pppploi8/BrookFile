@@ -1696,7 +1696,12 @@ pub async fn get_notebook_attachment(
             "json" => "application/json",
             _ => "application/octet-stream",
         };
-        return HttpResponse::Ok().content_type(mime_type).body(data);
+        let file_name = full_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let encoded_name = urlencoding::encode(&file_name);
+        return HttpResponse::Ok()
+            .content_type(mime_type)
+            .insert_header(("Content-Disposition", format!("inline; filename=\"{}\"; filename*=UTF-8''{}", file_name, encoded_name)))
+            .body(data);
     }
 
     let cache_key = format!("{}:{}", user_id, query.notebook_id);
@@ -2184,18 +2189,34 @@ pub async fn upload_notebook_attachment(
         });
     }
 
-    if target_path.exists() {
+    let actual_path = if !notebook.encrypted && target_path.exists() {
+        let stem = file_path.rfind('.').map(|i| &file_path[..i]).unwrap_or(&file_path);
+        let ext_part = file_path.rfind('.').map(|i| &file_path[i..]).unwrap_or("");
+        let mut i = 1u32;
+        loop {
+            let candidate = format!("{}({}){}", stem, i, ext_part);
+            let candidate_path = attachment_dir.join(&candidate);
+            if !candidate_path.exists() {
+                break candidate;
+            }
+            i += 1;
+        }
+    } else if target_path.exists() {
         return HttpResponse::Ok().json(ApiResponse {
             success: false,
             fail_code: Some("FILE_ALREADY_EXISTS".to_string()),
         });
-    }
+    } else {
+        file_path.clone()
+    };
 
-    match std::fs::write(&target_path, &file_data) {
-        Ok(_) => HttpResponse::Ok().json(ApiResponse {
-            success: true,
-            fail_code: None,
-        }),
+    let write_path = attachment_dir.join(&actual_path);
+
+    match std::fs::write(&write_path, &file_data) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "success": true,
+            "path": actual_path,
+        })),
         Err(_) => HttpResponse::Ok().json(ApiResponse {
             success: false,
             fail_code: Some("FILE_WRITE_ERROR".to_string()),

@@ -383,6 +383,85 @@ def test_file_api(session, root_path):
     assert resp.json()['success']
     assert not os.path.exists(os.path.join(root_path, 'folder_to_del'))
 
+    # --- rename: not logged in ---
+    resp = anon.post(f'{BASE_URL}/api/file/rename', json={'path': 'test.txt', 'new_name': 'renamed.txt'})
+    data = resp.json()
+    assert data['success'] is False
+    assert data['fail_code'] == 'NOT_LOGGED_IN'
+
+    # --- rename file ---
+    with open(os.path.join(root_path, 'rename_me.txt'), 'w') as f:
+        f.write('rename test')
+    resp = session.post(f'{BASE_URL}/api/file/rename', json={
+        'path': 'rename_me.txt', 'new_name': 'renamed.txt'
+    })
+    assert resp.json()['success']
+    assert not os.path.exists(os.path.join(root_path, 'rename_me.txt'))
+    assert os.path.isfile(os.path.join(root_path, 'renamed.txt'))
+
+    # --- rename folder ---
+    os.makedirs(os.path.join(root_path, 'rename_folder'))
+    resp = session.post(f'{BASE_URL}/api/file/rename', json={
+        'path': 'rename_folder', 'new_name': 'folder_renamed'
+    })
+    assert resp.json()['success']
+    assert not os.path.exists(os.path.join(root_path, 'rename_folder'))
+    assert os.path.isdir(os.path.join(root_path, 'folder_renamed'))
+
+    # --- rename: target already exists ---
+    with open(os.path.join(root_path, 'conflict_a.txt'), 'w') as f:
+        f.write('a')
+    with open(os.path.join(root_path, 'conflict_b.txt'), 'w') as f:
+        f.write('b')
+    resp = session.post(f'{BASE_URL}/api/file/rename', json={
+        'path': 'conflict_a.txt', 'new_name': 'conflict_b.txt'
+    })
+    data = resp.json()
+    assert data['success'] is False
+    assert data['fail_code'] == 'TARGET_ALREADY_EXISTS'
+
+    # --- rename: path not found ---
+    resp = session.post(f'{BASE_URL}/api/file/rename', json={
+        'path': 'nonexistent.txt', 'new_name': 'nope.txt'
+    })
+    data = resp.json()
+    assert data['success'] is False
+    assert data['fail_code'] == 'PATH_NOT_FOUND'
+
+    # --- rename: invalid new name ---
+    resp = session.post(f'{BASE_URL}/api/file/rename', json={
+        'path': 'renamed.txt', 'new_name': 'a/b'
+    })
+    data = resp.json()
+    assert data['success'] is False
+    assert data['fail_code'] == 'INVALID_FILE_NAME'
+
+    # --- rename: invalid path ---
+    resp = session.post(f'{BASE_URL}/api/file/rename', json={
+        'path': '../etc/passwd', 'new_name': 'hacked'
+    })
+    data = resp.json()
+    assert data['success'] is False
+    assert data['fail_code'] == 'INVALID_FILE_PATH'
+
+    # --- rename: empty path ---
+    resp = session.post(f'{BASE_URL}/api/file/rename', json={
+        'path': '', 'new_name': 'nope'
+    })
+    data = resp.json()
+    assert data['success'] is False
+    assert data['fail_code'] == 'INVALID_FILE_PATH'
+
+    # --- rename in subfolder ---
+    os.makedirs(os.path.join(root_path, 'sub_rename'))
+    with open(os.path.join(root_path, 'sub_rename', 'inner.txt'), 'w') as f:
+        f.write('inner')
+    resp = session.post(f'{BASE_URL}/api/file/rename', json={
+        'path': 'sub_rename/inner.txt', 'new_name': 'inner_renamed.txt'
+    })
+    assert resp.json()['success']
+    assert os.path.isfile(os.path.join(root_path, 'sub_rename', 'inner_renamed.txt'))
+
 
     # --- H2: upload_chunk should reject requests from other users ---
     workdir = os.path.dirname(root_path)

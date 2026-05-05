@@ -120,7 +120,8 @@
           />
         </div>
         <div class="table-wrapper">
-          <el-table :data="filteredPasswords" stripe border height="100%" show-overflow-tooltip>
+          <el-table :data="filteredPasswords" stripe border height="100%" show-overflow-tooltip @selection-change="handleSelectionChange">
+            <el-table-column type="selection" width="38" />
             <el-table-column :label="t('passwords.title')" min-width="200" prop="title" />
             <el-table-column :label="t('passwords.username')" min-width="180" prop="username" />
             <el-table-column :label="t('passwords.password')" min-width="150">
@@ -152,6 +153,12 @@
               </template>
             </el-table-column>
           </el-table>
+          <transition name="slide-up">
+            <div v-if="selectedPasswords.length > 0" class="selection-bar">
+              <span class="selection-count">{{ t('passwords.selectedCount', { count: selectedPasswords.length }) }}</span>
+              <el-button type="danger" :icon="Delete" @click="handleBatchDelete">{{ t('passwords.delete') }}</el-button>
+            </div>
+          </transition>
         </div>
       </div>
 
@@ -478,6 +485,7 @@ const isMobile = ref(false)
 const currentVault = ref<VaultItem | null>(null)
 const currentFolderId = ref<string | null>(null)
 const searchKeyword = ref('')
+const selectedPasswords = ref<PasswordItem[]>([])
 const unlockedVaultIds = ref<Set<string>>(new Set())
 const vaultMasterPasswords = ref<Map<string, string>>(new Map())
 
@@ -762,7 +770,6 @@ const filteredPasswords = computed(() => {
   if (!keyword) return currentPasswords.value
   return currentPasswords.value.filter(
     p => p.title.toLowerCase().includes(keyword) ||
-         p.username.toLowerCase().includes(keyword) ||
          p.remark.toLowerCase().includes(keyword)
   )
 })
@@ -797,12 +804,14 @@ async function selectVault(vault: VaultItem) {
   currentVault.value = vault
   currentFolderId.value = null
   searchKeyword.value = ''
+  selectedPasswords.value = []
 }
 
 function handleNodeClick(data: TreeNodeData) {
   if (data.isRoot) {
     currentVault.value = null
     currentFolderId.value = null
+    selectedPasswords.value = []
     return
   }
   if (data.isFolder) {
@@ -814,6 +823,7 @@ function handleNodeClick(data: TreeNodeData) {
     }
     currentFolderId.value = data.id.replace('folder-', '')
     searchKeyword.value = ''
+    selectedPasswords.value = []
     return
   }
   const vault = vaults.value.find(v => v.id === data.id)
@@ -1058,6 +1068,33 @@ async function handleDeletePassword(item: PasswordItem) {
   data.passwords = data.passwords.filter(p => p.id !== item.id)
   const saved = await saveVaultData(currentVault.value.id)
   if (saved) ElMessage.success({ __key: 'passwords.deletePasswordSuccess' })
+}
+
+async function handleBatchDelete() {
+  if (selectedPasswords.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      t('passwords.batchDeleteConfirm', { count: selectedPasswords.value.length }),
+      t('common.confirm'),
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  if (!currentVault.value) return
+  const data = vaultDataMap.value.get(currentVault.value.id)
+  if (!data) return
+  const ids = new Set(selectedPasswords.value.map(p => p.id))
+  data.passwords = data.passwords.filter(p => !ids.has(p.id))
+  const saved = await saveVaultData(currentVault.value.id)
+  if (saved) {
+    ElMessage.success({ __key: 'passwords.batchDeleteSuccess', __params: { count: ids.size } })
+    selectedPasswords.value = []
+  }
+}
+
+function handleSelectionChange(selection: PasswordItem[]) {
+  selectedPasswords.value = selection
 }
 
 function copyText(text: string) {
@@ -1533,6 +1570,30 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   padding: 0 16px 16px;
+  position: relative;
+}
+
+.selection-bar {
+  position: absolute;
+  bottom: 17px;
+  left: 17px;
+  right: 17px;
+  background: var(--el-bg-color);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.dark .selection-bar {
+  box-shadow: 0 -2px 8px rgba(255, 255, 255, 0.05);
+}
+
+.selection-count {
+  font-size: 14px;
+  color: var(--el-text-color-regular);
 }
 
 .btn-text {
@@ -1820,5 +1881,16 @@ onUnmounted(() => {
 .encrypt-rounds-hint {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  transform: translateY(100%);
+  opacity: 0;
 }
 </style>

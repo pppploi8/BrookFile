@@ -55,7 +55,6 @@ export default
     logout: 'Logout',
     language: 'Language',
     more: 'More',
-    settingsComingSoon: 'Settings page coming soon',
     categories: {
       files: 'Files',
       notes: 'Notes',
@@ -272,6 +271,8 @@ export default
     FOLDER_NOT_FOUND: 'Folder not found',
     INVALID_CYCLE: 'Invalid backup cycle',
     INVALID_FILE_NAME: 'Invalid file name',
+    TARGET_ALREADY_EXISTS: 'Target name already exists',
+    RENAME_FAILED: 'Rename failed',
     INVALID_STORAGE_TYPE: 'Invalid storage type',
     LOCAL_PATH_EMPTY: 'Local path cannot be empty',
     NAME_EMPTY: 'Name cannot be empty',
@@ -325,7 +326,6 @@ export default
     downloadFailed: 'Download Failed',
     saveFile: 'Save File',
     folderDownloadProgress: 'Folder Download Progress',
-    downloadProgressLabel: 'Download Progress',
     redownload: 'Redownload',
     move: 'Move',
     moveFiles: 'Move Files',
@@ -342,6 +342,9 @@ export default
     batchDeleteConfirm: 'Are you sure you want to delete {count} selected files?',
     deleteConfirm: 'Are you sure you want to delete "{name}"?',
     selectedCount: '{count} selected',
+    newNamePlaceholder: 'Enter new name',
+    pleaseEnterNewName: 'Please enter a new name',
+    renameSuccess: '"{name}" renamed successfully',
   },
   notes: {
     noNotebooks: 'No notebooks',
@@ -534,26 +537,9 @@ export default
     deleteFolderConfirm: 'Are you sure you want to delete folder "{name}"?',
     deletePasswordConfirm: 'Are you sure you want to delete password "{title}"?',
     renameFolderSuccess: 'Folder renamed successfully',
-  },
-  photos: {
-    title: 'Photos',
-    comingSoon: 'Coming Soon',
-    stayTuned: 'Photos feature is under development, stay tuned',
-  },
-  music: {
-    title: 'Music',
-    comingSoon: 'Coming Soon',
-    stayTuned: 'Music feature is under development, stay tuned',
-  },
-  videos: {
-    title: 'Videos',
-    comingSoon: 'Coming Soon',
-    stayTuned: 'Videos feature is under development, stay tuned',
-  },
-  ebooks: {
-    title: 'E-books',
-    comingSoon: 'Coming Soon',
-    stayTuned: 'E-books feature is under development, stay tuned',
+    batchDeleteConfirm: 'Are you sure you want to delete {count} selected passwords?',
+    batchDeleteSuccess: '{count} passwords deleted successfully',
+    selectedCount: '{count} selected',
   },
   backupLog: {
     title: 'Backup Log',
@@ -746,7 +732,6 @@ export default
   },
   settings: {
     title: 'Settings',
-    basicSettings: 'General',
     systemLogo: 'System Logo',
     uploadLogo: 'Upload Logo',
     changeLogo: 'Change Logo',
@@ -754,7 +739,6 @@ export default
     systemName: 'System Name',
     sessionTimeout: 'Session Timeout (seconds)',
     restartRequired: 'Takes effect after restart',
-    noteSearch: 'Note Search',
     fulltextSearch: 'Notebook Fulltext Search',
     fulltextSearchTip: 'When disabled, note search only matches titles. Saves runtime memory.',
     rebuildIndex: 'Rebuild Index',
@@ -764,7 +748,6 @@ export default
     saveSuccess: 'Settings saved',
     logoUploadSuccess: 'Logo uploaded',
     logoDeleteSuccess: 'Logo deleted',
-    noLogo: 'No logo set',
   },
 }
 

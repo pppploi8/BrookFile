@@ -526,4 +526,50 @@
 | `NOT_LOGGED_IN` | 用户未登录 |
 | `PATH_NOT_FOUND` | 文件夹不存在 |
 | `NOT_A_DIRECTORY` | 路径不是文件夹 |
+| `INVALID_FILE_PATH` | 文件路径无效（空路径或包含路径穿越）
+
+## 12. 文件重命名接口
+
+**路径**：POST /api/file/rename
+
+**功能**：重命名文件或文件夹。需要登录后才能访问。
+
+**请求参数**：
+```json
+{
+  "path": "old_name.txt",
+  "new_name": "new_name.txt"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|-----|------|------|------|
+| path | string | 是 | 文件或文件夹相对路径 |
+| new_name | string | 是 | 新名称（仅名称，不含路径） |
+
+**返回值**：
+
+**成功响应**：
+```json
+{
+  "success": true
+}
+```
+
+**失败响应**：
+```json
+{
+  "success": false,
+  "fail_code": "TARGET_ALREADY_EXISTS"
+}
+```
+
+**错误编码说明**：
+| 错误编码 | 说明 |
+|---------|------|
+| `NOT_LOGGED_IN` | 用户未登录 |
+| `PATH_NOT_FOUND` | 文件或文件夹不存在 |
+| `TARGET_ALREADY_EXISTS` | 目标名称已存在 |
 | `INVALID_FILE_PATH` | 文件路径无效（空路径或包含路径穿越） |
+| `INVALID_FILE_NAME` | 新名称无效（包含路径分隔符等） |
+| `RENAME_FAILED` | 重命名失败 | |

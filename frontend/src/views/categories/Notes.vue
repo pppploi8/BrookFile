@@ -1432,20 +1432,27 @@ function generateUUID(): string {
 async function uploadAttachment(file: File, isImage: boolean): Promise<string | null> {
   if (!currentNotebook.value) return null
   const ext = file.name.split('.').pop() || (isImage ? 'png' : 'bin')
+  const useOriginalName = !currentNotebook.value.encrypted
   let filename: string
-  filename = `${generateUUID()}.${ext}`
+  if (useOriginalName) {
+    filename = file.name
+  } else {
+    filename = `${generateUUID()}.${ext}`
+  }
   try {
+    let res: { success: boolean; path?: string }
     if (currentNotebook.value.encrypted && cryptoStore.isUnlocked(currentNotebook.value.id)) {
       const arrayBuffer = await file.arrayBuffer()
       const encrypted = await cryptoStore.encryptAttachment(currentNotebook.value.id, arrayBuffer)
       const encryptedBlob = new Blob([encrypted])
       const encryptedFile = new File([encryptedBlob], filename, { type: file.type })
-      await notebookStore.uploadAttachment(currentNotebook.value.id, filename, encryptedFile)
+      res = await notebookStore.uploadAttachment(currentNotebook.value.id, filename, encryptedFile)
     } else {
-      await notebookStore.uploadAttachment(currentNotebook.value.id, filename, file)
+      res = await notebookStore.uploadAttachment(currentNotebook.value.id, filename, file)
     }
+    const actualName = res.path || filename
     reloadNotebookNode(currentNotebook.value.id)
-    return `attachment/${filename}`
+    return `attachment/${actualName}`
   } catch (error: any) {
     if (error.isAxiosError && !error.response) {
       ElMessage.error({ __key: isImage ? 'notes.imageUploadFailed' : 'notes.uploadFailed' })

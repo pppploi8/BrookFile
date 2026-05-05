@@ -55,7 +55,6 @@ export default
     logout: '退出登录',
     language: '语言',
     more: '更多',
-    settingsComingSoon: '设置页面即将推出',
     categories: {
       files: '文件',
       notes: '云笔记',
@@ -272,6 +271,8 @@ export default
     FOLDER_NOT_FOUND: '文件夹不存在',
     INVALID_CYCLE: '备份周期无效',
     INVALID_FILE_NAME: '文件名无效',
+    TARGET_ALREADY_EXISTS: '目标名称已存在',
+    RENAME_FAILED: '重命名失败',
     INVALID_STORAGE_TYPE: '存储类型无效',
     LOCAL_PATH_EMPTY: '本地路径不能为空',
     NAME_EMPTY: '名称不能为空',
@@ -325,7 +326,6 @@ export default
     downloadFailed: '下载失败',
     saveFile: '保存文件',
     folderDownloadProgress: '文件夹下载进度',
-    downloadProgressLabel: '下载进度',
     redownload: '重新下载',
     move: '移动',
     moveFiles: '移动文件',
@@ -342,6 +342,9 @@ export default
     batchDeleteConfirm: '确定要删除选中的 {count} 个文件吗？',
     deleteConfirm: '确定要删除 "{name}" 吗？',
     selectedCount: '已选择 {count} 项',
+    newNamePlaceholder: '请输入新名称',
+    pleaseEnterNewName: '请输入新名称',
+    renameSuccess: '"{name}" 重命名成功',
   },
   notes: {
     noNotebooks: '暂无笔记本',
@@ -534,26 +537,9 @@ export default
     deleteFolderConfirm: '确定要删除文件夹 "{name}" 吗？',
     deletePasswordConfirm: '确定要删除密码 "{title}" 吗？',
     renameFolderSuccess: '文件夹重命名成功',
-  },
-  photos: {
-    title: '照片',
-    comingSoon: '即将推出',
-    stayTuned: '照片功能正在开发中，敬请期待',
-  },
-  music: {
-    title: '音乐',
-    comingSoon: '即将推出',
-    stayTuned: '音乐功能正在开发中，敬请期待',
-  },
-  videos: {
-    title: '视频',
-    comingSoon: '即将推出',
-    stayTuned: '视频功能正在开发中，敬请期待',
-  },
-  ebooks: {
-    title: '电子书',
-    comingSoon: '即将推出',
-    stayTuned: '电子书功能正在开发中，敬请期待',
+    batchDeleteConfirm: '确定要删除选中的 {count} 条密码吗？',
+    batchDeleteSuccess: '成功删除 {count} 条密码',
+    selectedCount: '已选择 {count} 项',
   },
   backupLog: {
     title: '备份日志',
@@ -746,7 +732,6 @@ export default
   },
   settings: {
     title: '系统设置',
-    basicSettings: '基本设置',
     systemLogo: '系统Logo',
     uploadLogo: '上传Logo',
     changeLogo: '更换Logo',
@@ -754,7 +739,6 @@ export default
     systemName: '系统名称',
     sessionTimeout: '会话超时(秒)',
     restartRequired: '重启后生效',
-    noteSearch: '笔记搜索',
     fulltextSearch: '笔记全文搜索',
     fulltextSearchTip: '关闭后笔记搜索仅匹配标题，不搜索笔记内容，可节省运行内存',
     rebuildIndex: '手动重建索引',
@@ -764,7 +748,6 @@ export default
     saveSuccess: '设置已保存',
     logoUploadSuccess: 'Logo上传成功',
     logoDeleteSuccess: 'Logo已删除',
-    noLogo: '未设置Logo',
   },
 }
 

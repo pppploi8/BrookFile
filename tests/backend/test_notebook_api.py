@@ -663,6 +663,103 @@ def test_notebook_api(session, root_path):
 
     session.post(f'{BASE_URL}/api/notebook/delete', json={'id': bug_att_id})
 
+    # --- attachment upload: non-encrypted keeps original filename ---
+    os.makedirs(os.path.join(root_path, 'att_upload_nb'), exist_ok=True)
+    resp = session.post(f'{BASE_URL}/api/notebook/create', json={
+        'name': 'AttUploadTest',
+        'path': 'att_upload_nb',
+        'encrypted': False
+    })
+    att_up_id = resp.json()['id']
+
+    resp = session.post(f'{BASE_URL}/api/notebook/upload_attachment', files={
+        'notebook_id': (None, att_up_id),
+        'path': (None, 'photo.jpg'),
+        'file': ('photo.jpg', b'\xff\xd8\xff\xe0fake_jpg_data', 'image/jpeg'),
+    })
+    data = resp.json()
+    assert data['success'] is True
+    assert data['path'] == 'photo.jpg'
+    assert os.path.isfile(os.path.join(root_path, 'att_upload_nb', 'attachment', 'photo.jpg'))
+
+    # --- attachment upload: non-encrypted dedup (Windows-style) ---
+    resp = session.post(f'{BASE_URL}/api/notebook/upload_attachment', files={
+        'notebook_id': (None, att_up_id),
+        'path': (None, 'photo.jpg'),
+        'file': ('photo.jpg', b'\xff\xd8\xff\xe0another_jpg', 'image/jpeg'),
+    })
+    data = resp.json()
+    assert data['success'] is True
+    assert data['path'] == 'photo(1).jpg'
+    assert os.path.isfile(os.path.join(root_path, 'att_upload_nb', 'attachment', 'photo(1).jpg'))
+
+    # --- attachment upload: non-encrypted dedup increments ---
+    resp = session.post(f'{BASE_URL}/api/notebook/upload_attachment', files={
+        'notebook_id': (None, att_up_id),
+        'path': (None, 'photo.jpg'),
+        'file': ('photo.jpg', b'\xff\xd8\xff\xe0third_jpg', 'image/jpeg'),
+    })
+    data = resp.json()
+    assert data['success'] is True
+    assert data['path'] == 'photo(2).jpg'
+    assert os.path.isfile(os.path.join(root_path, 'att_upload_nb', 'attachment', 'photo(2).jpg'))
+
+    # --- attachment upload: non-encrypted different name no dedup ---
+    resp = session.post(f'{BASE_URL}/api/notebook/upload_attachment', files={
+        'notebook_id': (None, att_up_id),
+        'path': (None, 'document.pdf'),
+        'file': ('document.pdf', b'%PDF-1.4 fake pdf', 'application/pdf'),
+    })
+    data = resp.json()
+    assert data['success'] is True
+    assert data['path'] == 'document.pdf'
+    assert os.path.isfile(os.path.join(root_path, 'att_upload_nb', 'attachment', 'document.pdf'))
+
+    # --- attachment download: non-encrypted has Content-Disposition ---
+    resp_tok = session.post(f'{BASE_URL}/api/notebook/attachment_token', json={
+        'notebook_id': att_up_id
+    })
+    att_token = resp_tok.json()['token']
+    resp = requests.get(f'{BASE_URL}/api/notebook/attachment', params={
+        'notebook_id': att_up_id,
+        'path': 'attachment/photo.jpg',
+        'token': att_token,
+    })
+    assert resp.status_code == 200
+    assert 'Content-Disposition' in resp.headers
+    assert 'photo.jpg' in resp.headers['Content-Disposition']
+
+    # --- attachment download: non-encrypted dedup file also has Content-Disposition ---
+    resp = requests.get(f'{BASE_URL}/api/notebook/attachment', params={
+        'notebook_id': att_up_id,
+        'path': 'attachment/photo(1).jpg',
+        'token': att_token,
+    })
+    assert resp.status_code == 200
+    assert 'Content-Disposition' in resp.headers
+    assert 'photo(1).jpg' in resp.headers['Content-Disposition']
+
+    # --- attachment upload: non-encrypted no extension dedup ---
+    resp = session.post(f'{BASE_URL}/api/notebook/upload_attachment', files={
+        'notebook_id': (None, att_up_id),
+        'path': (None, 'README'),
+        'file': ('README', b'readme content', 'text/plain'),
+    })
+    data = resp.json()
+    assert data['success'] is True
+    assert data['path'] == 'README'
+
+    resp = session.post(f'{BASE_URL}/api/notebook/upload_attachment', files={
+        'notebook_id': (None, att_up_id),
+        'path': (None, 'README'),
+        'file': ('README', b'readme content 2', 'text/plain'),
+    })
+    data = resp.json()
+    assert data['success'] is True
+    assert data['path'] == 'README(1)'
+
+    session.post(f'{BASE_URL}/api/notebook/delete', json={'id': att_up_id})
+
 
 if __name__ == '__main__':
     run_tests(test_notebook_api)

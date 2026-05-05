@@ -106,18 +106,20 @@
         </template>
       </el-table-column>
 
-      <el-table-column :label="t('files.operations')" width="200" fixed="right">
+      <el-table-column :label="t('files.operations')" width="260" fixed="right">
         <template #default="{ row }">
           <template v-if="row.file_type === 'parent'">
           </template>
           <template v-else-if="row.file_type === 'directory'">
             <el-link type="primary" :icon="Share" @click="handleShare(row)">{{ t('share.shareAction') }}</el-link>
             <el-link type="primary" :icon="Download" @click="handleFolderDownload(row)">{{ t('files.download') }}</el-link>
+            <el-link type="primary" :icon="Edit" @click="handleRename(row)">{{ t('common.rename') }}</el-link>
             <el-link type="danger" :icon="Delete" @click="handleDelete(row)">{{ t('files.delete') }}</el-link>
           </template>
           <template v-else>
             <el-link type="primary" :icon="Share" @click="handleShare(row)">{{ t('share.shareAction') }}</el-link>
             <el-link type="primary" :icon="Download" @click="handleDownload(row)">{{ t('files.download') }}</el-link>
+            <el-link type="primary" :icon="Edit" @click="handleRename(row)">{{ t('common.rename') }}</el-link>
             <el-link type="danger" :icon="Delete" @click="handleDelete(row)">{{ t('files.delete') }}</el-link>
           </template>
         </template>
@@ -195,6 +197,25 @@
           {{ t('common.cancel') }}
         </el-button>
         <el-button type="primary" @click="confirmCreateFolder">
+          {{ t('common.confirm') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="renameDialogVisible"
+      :title="t('common.rename')"
+      width="min(400px, calc(100vw - 32px))"
+    >
+      <el-input
+        v-model="renameNewName"
+        :placeholder="t('files.newNamePlaceholder')"
+      />
+      <template #footer>
+        <el-button @click="renameDialogVisible = false">
+          {{ t('common.cancel') }}
+        </el-button>
+        <el-button type="primary" @click="confirmRename">
           {{ t('common.confirm') }}
         </el-button>
       </template>
@@ -475,10 +496,10 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from '@/utils/message'
 import { ElMessageBox } from 'element-plus'
-import { Upload, FolderAdd, Search, Delete, Folder, Document, HomeFilled, Download, FolderRemove, Back, Loading, Share } from '@element-plus/icons-vue'
+import { Upload, FolderAdd, Search, Delete, Folder, Document, HomeFilled, Download, FolderRemove, Back, Loading, Share, Edit } from '@element-plus/icons-vue'
 import { formatUtcTimestamp, formatUtcDatetimeString } from '@/utils/date'
 import { formatFileSize, formatDownloadSpeed } from '@/utils/format'
-import { browseFiles, createFolder, deleteFile, uploadStart, uploadChunk, uploadComplete, uploadCancel, fetchDownloadFolder, fetchDownloadFile, moveFiles, batchDeleteFiles } from '@/api'
+import { browseFiles, createFolder, deleteFile, uploadStart, uploadChunk, uploadComplete, uploadCancel, fetchDownloadFolder, fetchDownloadFile, moveFiles, batchDeleteFiles, renameFile } from '@/api'
 import type { FileItem } from '@/api'
 import { getShareByPath, createShare, deleteShares, getSystemInfo, type ShareItem } from '@/api/system'
 import { useUserStore } from '@/stores/user'
@@ -570,6 +591,11 @@ const moveBrowserPath = ref('')
 const moveBrowserFolders = ref<{ name: string; path: string }[]>([])
 const moveBrowserHasParent = ref(false)
 const moveBrowserLoading = ref(false)
+
+const renameDialogVisible = ref(false)
+const renameFilePath = ref('')
+const renameOldName = ref('')
+const renameNewName = ref('')
 
 const shareDrawerVisible = ref(false)
 const shareDrawerLoading = ref(false)
@@ -1364,6 +1390,32 @@ const confirmCreateFolder = async () => {
     if (error.isAxiosError && !error.response) {
       ElMessage.error({ __key: 'errors.NETWORK_ERROR' })
     }
+  }
+}
+
+const handleRename = (row: FileItem) => {
+  renameOldName.value = row.name
+  renameNewName.value = row.name
+  renameFilePath.value = currentPath.value ? `${currentPath.value}/${row.name}` : row.name
+  renameDialogVisible.value = true
+}
+
+const confirmRename = async () => {
+  const trimmed = renameNewName.value.trim()
+  if (!trimmed) {
+    ElMessage.warning({ __key: 'files.pleaseEnterNewName' })
+    return
+  }
+  if (trimmed === renameOldName.value) {
+    renameDialogVisible.value = false
+    return
+  }
+  try {
+    await renameFile(renameFilePath.value, trimmed)
+    ElMessage.success({ __key: 'files.renameSuccess', __params: { name: renameOldName.value } })
+    renameDialogVisible.value = false
+    loadFiles()
+  } catch {
   }
 }
 

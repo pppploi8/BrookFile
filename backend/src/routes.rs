@@ -50,6 +50,7 @@ pub fn configure(app: &mut web::ServiceConfig, app_state: web::Data<AppState>) {
         )
         .route("/api/file/delete", web::post().to(handlers::delete_file))
         .route("/api/file/move", web::post().to(handlers::move_files))
+        .route("/api/file/rename", web::post().to(handlers::rename_file))
         .route(
             "/api/file/batch_delete",
             web::post().to(handlers::batch_delete),

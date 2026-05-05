@@ -1,0 +1,15 @@
+frontend/dist
+frontend/node_modules
+backend/target
+database.db
+database.db-shm
+database.db-wal
+backend/error.log
+.opencode/node_modules
+.opencode/tmp
+.opencode/runner
+testing/
+test/test_workdir/
+output/
+*.pyc
+.vscode

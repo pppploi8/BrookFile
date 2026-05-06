@@ -158,7 +158,6 @@ BrookFile/
 ├── api/               # 接口文档
 ├── database/          # 数据库文档
 ├── build.py           # 构建脚本
-└── start.py           # 启动脚本
 ```
 
 ### 快速开始

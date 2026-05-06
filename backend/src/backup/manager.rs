@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use serde::{Serialize, Deserialize};
 
 const INDEX_FILE: &str = ".index";
+const INFO_FILE: &str = ".info";
 const BLOCK_SIZE: usize = 4096;
 const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024; // 1MB
 const CONCURRENT_UPLOADS: usize = 5;
@@ -368,6 +369,9 @@ impl BackupManager {
         if files_to_upload.is_empty() {
             let final_index = index_for_save.read().await.clone();
             Self::save_index(&backend, &final_index, encrypted, rule.backup_password.as_deref()).await?;
+            if encrypted {
+                Self::save_info(&backend).await?;
+            }
             return Ok(());
         }
 
@@ -619,6 +623,10 @@ impl BackupManager {
         let final_index = index_for_save.read().await.clone();
         Self::save_index(&backend, &final_index, encrypted, rule.backup_password.as_deref()).await?;
 
+        if encrypted {
+            Self::save_info(&backend).await?;
+        }
+
         if task.task_failed.load(Ordering::Relaxed) {
             let fail_reason = task.fail_reason.read().await.clone();
             return Err(fail_reason.unwrap_or_else(|| "UPLOAD_FAILED".to_string()));
@@ -821,7 +829,7 @@ impl BackupManager {
                     continue;
                 }
 
-                if remote_path == index_remote_name || indexed_remote_paths.contains(&remote_path) {
+                if remote_path == index_remote_name || remote_path == INFO_FILE || indexed_remote_paths.contains(&remote_path) {
                     dir_has_content = true;
                     continue;
                 }
@@ -963,6 +971,25 @@ impl BackupManager {
         
         let upload_task = backend.upload_stream(&index_path, total_size, rx, Arc::new(|_, _| {}));
         
+        let (send_result, upload_result) = tokio::join!(send_task, upload_task);
+        send_result.map_err(|e| e.to_string())?;
+        upload_result.map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    async fn save_info(backend: &Box<dyn StorageBackend>) -> Result<(), String> {
+        let info = crate::models::backup_rule::current_backup_info();
+        let data = serde_json::to_vec(&info).map_err(|e| e.to_string())?;
+        let total_size = data.len() as u64;
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
+        let send_task = async move {
+            let _ = tx.send(data).await;
+            Ok::<_, crate::storage::StorageError>(())
+        };
+        let upload_task = backend.upload_stream(INFO_FILE, total_size, rx, Arc::new(|_, _| {}));
+
         let (send_result, upload_result) = tokio::join!(send_task, upload_task);
         send_result.map_err(|e| e.to_string())?;
         upload_result.map_err(|e| e.to_string())?;

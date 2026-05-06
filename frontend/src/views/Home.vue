@@ -126,7 +126,10 @@
       </header>
 
       <main class="content-area">
-        <router-view />
+        <div v-if="routeLoading" class="route-loading">
+          <div class="route-loading-spinner"></div>
+        </div>
+        <router-view v-else />
       </main>
 
       <!-- 移动端底部导航 -->
@@ -232,7 +235,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
@@ -251,7 +254,7 @@ import {
   Share,
   Delete
 } from '@element-plus/icons-vue'
-import { logout, fetchAvatar } from '@/api'
+import { logout, fetchAvatar, ping } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
 
@@ -264,6 +267,27 @@ const themeStore = useThemeStore()
 const showUserMenu = ref(false)
 const showMoreMenu = ref(false)
 const isMobileLayout = ref(false)
+const routeLoading = ref(false)
+const pendingPath = ref<string | null>(null)
+
+let routeLoadingTimer: ReturnType<typeof setTimeout> | null = null
+let pingTimer: ReturnType<typeof setInterval> | null = null
+
+const beforeGuard = router.beforeEach((to, from) => {
+  if (to.path !== from.path && to.path.startsWith('/')) {
+    pendingPath.value = to.path
+    routeLoading.value = true
+    if (routeLoadingTimer) clearTimeout(routeLoadingTimer)
+    routeLoadingTimer = setTimeout(() => {
+      routeLoading.value = false
+    }, 10000)
+  }
+})
+router.afterEach(() => {
+  pendingPath.value = null
+  if (routeLoadingTimer) { clearTimeout(routeLoadingTimer); routeLoadingTimer = null }
+  nextTick(() => { routeLoading.value = false })
+})
 
 // 根据屏幕长宽比判断是否使用移动端布局
 // 当高度大于宽度的1.2倍时使用移动端布局
@@ -290,6 +314,9 @@ onUnmounted(() => {
   if (avatarUrl.value) {
     URL.revokeObjectURL(avatarUrl.value)
   }
+  if (routeLoadingTimer) { clearTimeout(routeLoadingTimer); routeLoadingTimer = null }
+  if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
+  beforeGuard()
   window.removeEventListener('resize', checkLayout)
 })
 
@@ -336,7 +363,7 @@ const mobileNavItems = computed(() => menuItems.value.slice(0, 3))
 const moreMenuItems = computed(() => menuItems.value.slice(3))
 
 const currentCategoryLabel = computed(() => {
-  const currentPath = route.path
+  const currentPath = pendingPath.value || route.path
   if (currentPath === '/account-management') {
     return t('home.accountManagement')
   }
@@ -354,7 +381,8 @@ const currentCategoryLabel = computed(() => {
 })
 
 const isActive = (path: string) => {
-  return route.path.startsWith(path)
+  const currentPath = pendingPath.value || route.path
+  return currentPath.startsWith(path)
 }
 
 const handleLangCommand = (command: string) => {
@@ -407,6 +435,8 @@ onMounted(() => {
   loadAvatar()
   checkLayout()
   window.addEventListener('resize', checkLayout)
+  ping()
+  pingTimer = setInterval(ping, 60000)
 })
 </script>
 
@@ -773,6 +803,26 @@ onMounted(() => {
 
 .content-area::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+.route-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.route-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-light);
+  border-top-color: var(--nav-item-active);
+  border-radius: 50%;
+  animation: route-spin 0.8s linear infinite;
+}
+
+@keyframes route-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ===== Mobile Layout ===== */

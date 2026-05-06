@@ -129,6 +129,13 @@ pub async fn login(
     }
 }
 
+pub async fn ping() -> impl Responder {
+    HttpResponse::Ok().json(ApiResponse {
+        success: true,
+        fail_code: None,
+    })
+}
+
 pub async fn logout(http_req: HttpRequest, app_state: web::Data<AppState>) -> impl Responder {
     if let Some(session_id) = get_session_id(&http_req) {
         app_state.session_manager.invalidate(&session_id);

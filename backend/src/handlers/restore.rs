@@ -138,27 +138,12 @@ pub async fn start_restore(
         });
     }
 
-    let backup_password = match req.backup_password.as_ref().map(|p| {
-        crate::models::backup_rule::encrypt_password_string(p)
-    }).transpose() {
-        Ok(p) => p,
-        Err(e) => {
-            crate::error_logger::log_error("/api/restore/start", &e);
-            return HttpResponse::Ok().json(StartRestoreResponse {
-                task_id: None,
-                success: false,
-                fail_code: Some("INTERNAL_ERROR".to_string()),
-                message: None,
-            });
-        }
-    };
-
     let config = RestoreConfig {
         user_id,
         storage_type: req.storage_type.clone(),
         storage_config: req.storage_config.clone(),
         encrypted: req.encrypted,
-        backup_password,
+        backup_password: req.backup_password.clone(),
         target_path: full_path,
     };
 

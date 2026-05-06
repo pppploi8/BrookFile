@@ -81,6 +81,10 @@ const router = createRouter({
 router.beforeEach((to) => {
   const userStore = useUserStore()
 
+  if (!userStore.systemInfoLoaded) {
+    return
+  }
+
   if (to.meta.requiresInit && !userStore.initialized) {
     return { path: '/init', replace: true }
   }

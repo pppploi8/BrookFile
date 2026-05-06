@@ -1,5 +1,5 @@
 <template>
-  <div class="account-management-container">
+  <div class="account-management-container" :class="{ 'is-mobile': isMobile }">
     <div class="account-toolbar">
       <div class="toolbar-left">
         <el-button type="primary" @click="handleAddUser">
@@ -47,15 +47,13 @@
           </template>
         </el-table-column>
         
-        <el-table-column :label="t('accountManagement.operations')" width="150" fixed="right">
+        <el-table-column :label="t('accountManagement.operations')" :width="isMobile ? 80 : 150" fixed="right">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">
-              <el-icon><Edit /></el-icon>
-              {{ t('accountManagement.edit') }}
+            <el-link type="primary" :icon="Edit" @click="handleEdit(row)">
+              <span v-if="!isMobile">{{ t('accountManagement.edit') }}</span>
             </el-link>
-            <el-link type="danger" @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>
-              {{ t('accountManagement.delete') }}
+            <el-link type="danger" :icon="Delete" @click="handleDelete(row)">
+              <span v-if="!isMobile">{{ t('accountManagement.delete') }}</span>
             </el-link>
           </template>
         </el-table-column>
@@ -142,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from '@/utils/message'
 import { ElMessageBox } from 'element-plus'
@@ -151,6 +149,11 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { getUserList, createUser, updateUser, deleteUser, type UserItem, type CreateUserRequest, type UpdateUserRequest } from '@/api/system'
 
 const { t } = useI18n()
+
+const isMobile = ref(false)
+const checkLayout = () => {
+  isMobile.value = window.innerWidth <= 768
+}
 
 const formRef = ref<FormInstance>()
 const drawerVisible = ref(false)
@@ -321,7 +324,13 @@ const handleSubmit = async () => {
 }
 
 onMounted(() => {
+  checkLayout()
+  window.addEventListener('resize', checkLayout)
   fetchUserList()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkLayout)
 })
 </script>
 
@@ -363,5 +372,9 @@ onMounted(() => {
 
 .remark-text {
   color: var(--el-text-color-secondary);
+}
+
+.account-management-container.is-mobile .el-link .el-icon {
+  margin-right: 0;
 }
 </style>

@@ -99,13 +99,13 @@
                     {{ getPermissionText(row.permission) }}
                   </template>
                 </el-table-column>
-                <el-table-column :label="t('profile.backupOperations')" min-width="150" fixed="right">
+                <el-table-column :label="t('profile.backupOperations')" :min-width="isMobile ? 80 : 150" fixed="right">
                   <template #default="{ row }">
                     <el-link type="primary" :icon="Edit" @click="handleEditWebDav(row)">
-                      {{ t('profile.edit') }}
+                      <span v-if="!isMobile">{{ t('profile.edit') }}</span>
                     </el-link>
                     <el-link type="danger" :icon="Delete" @click="handleDeleteWebDav(row)">
-                      {{ t('profile.delete') }}
+                      <span v-if="!isMobile">{{ t('profile.delete') }}</span>
                     </el-link>
                   </template>
                 </el-table-column>
@@ -188,16 +188,16 @@
                     {{ row.last_backup_time || '-' }}
                   </template>
                 </el-table-column>
-                <el-table-column :label="t('profile.backupOperations')" min-width="200" fixed="right">
+                <el-table-column :label="t('profile.backupOperations')" :min-width="isMobile ? 110 : 200" fixed="right">
                   <template #default="{ row }">
                     <el-link type="primary" :icon="Edit" @click="handleEditBackup(row)">
-                      {{ t('profile.edit') }}
+                      <span v-if="!isMobile">{{ t('profile.edit') }}</span>
                     </el-link>
                     <el-link type="primary" :icon="Document" @click="handleViewLog(row)">
-                      {{ t('profile.log') }}
+                      <span v-if="!isMobile">{{ t('profile.log') }}</span>
                     </el-link>
                     <el-link type="danger" :icon="Delete" @click="handleDeleteBackup(row)">
-                      {{ t('profile.delete') }}
+                      <span v-if="!isMobile">{{ t('profile.delete') }}</span>
                     </el-link>
                   </template>
                 </el-table-column>
@@ -1289,6 +1289,10 @@ onUnmounted(() => {
 
   .feature-label {
     font-size: 15px;
+  }
+
+  .profile-container .el-link .el-icon {
+    margin-right: 0;
   }
 }
 </style>

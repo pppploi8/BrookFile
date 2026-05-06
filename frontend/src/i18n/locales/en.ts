@@ -36,6 +36,9 @@ export default
     recycleBinPath: 'Recycle Bin Path',
     recycleBinPathPlaceholder: 'Leave empty to disable recycle bin',
   },
+  app: {
+    loadFailed: 'Network connection failed, retrying...',
+  },
   login: {
     title: 'Sign in to your account',
     username: 'Username',
@@ -672,6 +675,7 @@ export default
     permanentDeleteConfirm: 'Are you sure you want to permanently delete this item? This action cannot be undone.',
     searchPlaceholderCurrentPage: 'Search current page...',
     restoreSuccess: 'Restored successfully',
+    restoreConfirm: 'Are you sure you want to restore this item?',
     deleteSuccess: 'Permanently deleted',
     emptySuccess: 'Recycle bin emptied',
     file: 'File',

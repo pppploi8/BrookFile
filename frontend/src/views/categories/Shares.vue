@@ -71,13 +71,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('files.operations')" width="160" fixed="right">
+        <el-table-column :label="t('files.operations')" :width="isMobileLayout ? 80 : 160" fixed="right">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleCopyLink(row)">
-              {{ t('share.copyLink') }}
+            <el-link type="primary" :icon="Link" @click="handleCopyLink(row)">
+              <span v-if="!isMobileLayout">{{ t('share.copyLink') }}</span>
             </el-link>
-            <el-link type="danger" @click="handleDelete(row)">
-              {{ t('share.deleteShare') }}
+            <el-link type="danger" :icon="Delete" @click="handleDelete(row)">
+              <span v-if="!isMobileLayout">{{ t('share.deleteShare') }}</span>
             </el-link>
           </template>
         </el-table-column>
@@ -102,7 +102,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from '@/utils/message'
 import { ElMessageBox } from 'element-plus'
-import { Folder, Document } from '@element-plus/icons-vue'
+import { Folder, Document, Link, Delete } from '@element-plus/icons-vue'
 import { formatUtcDatetimeString } from '@/utils/date'
 import { listShares, deleteShares, getSystemInfo, type ShareItem } from '@/api/system'
 import { useUserStore } from '@/stores/user'
@@ -301,5 +301,9 @@ const handleBatchDelete = () => {
 
 .shares-container.is-mobile .btn-text {
   margin-left: 0;
+}
+
+.shares-container.is-mobile .el-link .el-icon {
+  margin-right: 0;
 }
 </style>

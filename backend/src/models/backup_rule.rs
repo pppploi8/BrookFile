@@ -78,13 +78,63 @@ pub struct UpdateBackupRuleData {
 fn encrypt_password(password: &str) -> Result<String, String> {
     let argon2 = crate::config::Config::global().create_argon2();
     let mut output = [0u8; 32];
-    argon2.hash_password_into(password.as_bytes(), BACKUP_SALT, &mut output).map_err(|e| e.to_string())?;
+    argon2
+        .hash_password_into(password.as_bytes(), BACKUP_SALT, &mut output)
+        .map_err(|e| e.to_string())?;
     Ok(hex::encode(output))
 }
 
-/// 公开的密码加密函数（用于恢复功能）
 pub fn encrypt_password_string(password: &str) -> Result<String, String> {
     encrypt_password(password)
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct BackupKdfInfo {
+    pub algorithm: String,
+    pub version: String,
+    pub m_cost: u32,
+    pub t_cost: u32,
+    pub p_cost: u32,
+    pub output_len: usize,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct BackupInfo {
+    pub version: u32,
+    pub kdf: BackupKdfInfo,
+}
+
+pub fn current_backup_info() -> BackupInfo {
+    let config = crate::config::Config::global();
+    BackupInfo {
+        version: 1,
+        kdf: BackupKdfInfo {
+            algorithm: "argon2id".to_string(),
+            version: "0x13".to_string(),
+            m_cost: config.argon2.m_cost,
+            t_cost: config.argon2.t_cost,
+            p_cost: config.argon2.p_cost,
+            output_len: 32,
+        },
+    }
+}
+
+pub fn encrypt_password_with_params(
+    password: &str,
+    info: &BackupKdfInfo,
+) -> Result<String, String> {
+    let version = match info.version.as_str() {
+        "0x13" => argon2::Version::V0x13,
+        _ => return Err("Unsupported Argon2 version".to_string()),
+    };
+    let params = argon2::Params::new(info.m_cost, info.t_cost, info.p_cost, Some(info.output_len))
+        .map_err(|e| e.to_string())?;
+    let argon2 = argon2::Argon2::new(argon2::Algorithm::Argon2id, version, params);
+    let mut output = vec![0u8; info.output_len];
+    argon2
+        .hash_password_into(password.as_bytes(), BACKUP_SALT, &mut output)
+        .map_err(|e| e.to_string())?;
+    Ok(hex::encode(output))
 }
 
 impl BackupRuleModel {
@@ -236,17 +286,16 @@ impl BackupRuleModel {
 
         let conn = self.pool.get().map_err(|e| e.to_string())?;
 
-        let exists = match conn
-            .query_row(
-                "SELECT 1 FROM backup_rules WHERE id = ?1 AND user_id = ?2",
-                params![req.id, user_id],
-                |_| Ok(true),
-            ) {
-                Ok(true) => true,
-                Err(rusqlite::Error::QueryReturnedNoRows) => false,
-                Err(e) => return Err(e.to_string()),
-                Ok(_) => false,
-            };
+        let exists = match conn.query_row(
+            "SELECT 1 FROM backup_rules WHERE id = ?1 AND user_id = ?2",
+            params![req.id, user_id],
+            |_| Ok(true),
+        ) {
+            Ok(true) => true,
+            Err(rusqlite::Error::QueryReturnedNoRows) => false,
+            Err(e) => return Err(e.to_string()),
+            Ok(_) => false,
+        };
 
         if !exists {
             return Ok(false);
@@ -359,17 +408,16 @@ impl BackupRuleModel {
     pub fn delete(&self, rule_id: &str, user_id: &str) -> Result<bool, String> {
         let conn = self.pool.get().map_err(|e| e.to_string())?;
 
-        let exists = match conn
-            .query_row(
-                "SELECT 1 FROM backup_rules WHERE id = ?1 AND user_id = ?2",
-                params![rule_id, user_id],
-                |_| Ok(true),
-            ) {
-                Ok(true) => true,
-                Err(rusqlite::Error::QueryReturnedNoRows) => false,
-                Err(e) => return Err(e.to_string()),
-                Ok(_) => false,
-            };
+        let exists = match conn.query_row(
+            "SELECT 1 FROM backup_rules WHERE id = ?1 AND user_id = ?2",
+            params![rule_id, user_id],
+            |_| Ok(true),
+        ) {
+            Ok(true) => true,
+            Err(rusqlite::Error::QueryReturnedNoRows) => false,
+            Err(e) => return Err(e.to_string()),
+            Ok(_) => false,
+        };
 
         if !exists {
             return Ok(false);
@@ -465,14 +513,21 @@ impl BackupRuleModel {
         Ok(())
     }
 
-    pub fn list_logs_by_rule(&self, rule_id: &str, page: u32, page_size: u32) -> Result<(Vec<BackupLogItem>, u32), String> {
+    pub fn list_logs_by_rule(
+        &self,
+        rule_id: &str,
+        page: u32,
+        page_size: u32,
+    ) -> Result<(Vec<BackupLogItem>, u32), String> {
         let conn = self.pool.get().map_err(|e| e.to_string())?;
 
-        let total: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM backup_logs WHERE backup_rule_id = ?1",
-            params![rule_id],
-            |row| row.get(0),
-        ).unwrap_or(0);
+        let total: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM backup_logs WHERE backup_rule_id = ?1",
+                params![rule_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         let offset = (page.saturating_sub(1)) * page_size;
 
@@ -481,21 +536,24 @@ impl BackupRuleModel {
              FROM backup_logs WHERE backup_rule_id = ?1 ORDER BY started_at DESC LIMIT ?2 OFFSET ?3"
         ).map_err(|e| e.to_string())?;
 
-        let items: Vec<BackupLogItem> = stmt.query_map(params![rule_id, page_size, offset], |row| {
-            Ok(BackupLogItem {
-                id: row.get(0)?,
-                rule_id: row.get(1)?,
-                mode: row.get(2)?,
-                status: row.get(3)?,
-                started_at: row.get(4)?,
-                finished_at: row.get(5)?,
-                backup_success_count: row.get::<_, i64>(6)? as u64,
-                backup_fail_count: row.get::<_, i64>(7)? as u64,
-                cleanup_deleted_count: row.get::<_, i64>(8)? as u64,
-                fail_reason: row.get(9)?,
+        let items: Vec<BackupLogItem> = stmt
+            .query_map(params![rule_id, page_size, offset], |row| {
+                Ok(BackupLogItem {
+                    id: row.get(0)?,
+                    rule_id: row.get(1)?,
+                    mode: row.get(2)?,
+                    status: row.get(3)?,
+                    started_at: row.get(4)?,
+                    finished_at: row.get(5)?,
+                    backup_success_count: row.get::<_, i64>(6)? as u64,
+                    backup_fail_count: row.get::<_, i64>(7)? as u64,
+                    cleanup_deleted_count: row.get::<_, i64>(8)? as u64,
+                    fail_reason: row.get(9)?,
+                })
             })
-        }).map_err(|e| e.to_string())?
-          .filter_map(|r| r.ok()).collect();
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok((items, total))
     }

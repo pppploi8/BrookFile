@@ -158,7 +158,6 @@ BrookFile/
 ├── api/               # API documentation
 ├── database/          # Database documentation
 ├── build.py           # Build script
-└── start.py           # Start script
 ```
 
 ### Quick Start

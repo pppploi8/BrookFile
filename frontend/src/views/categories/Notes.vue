@@ -273,7 +273,7 @@
           </div>
           <div class="editor-wrapper">
             <div class="editor-pane">
-              <div ref="monacoContainer" class="monaco-container"></div>
+              <div ref="editorContainer" class="editor-container"></div>
             </div>
             <div class="editor-divider"></div>
             <div class="preview-pane">
@@ -622,7 +622,15 @@ import {
   type FileTreeNode,
 } from '@/api/system'
 import { saveNote as apiSaveNote, readNote as readNoteApi, getAttachmentUrl, searchNotes, createNotebookFolder } from '@/api/system'
-import * as monaco from 'monaco-editor'
+import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection, rectangularSelection, highlightSpecialChars } from '@codemirror/view'
+import { EditorState, Compartment } from '@codemirror/state'
+import { markdown } from '@codemirror/lang-markdown'
+import { languages } from '@codemirror/language-data'
+import { oneDark } from '@codemirror/theme-one-dark'
+import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands'
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from '@codemirror/language'
+import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
+import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -640,8 +648,9 @@ renderer.link = function (this: any, token: any) {
 }
 marked.setOptions({ gfm: true, breaks: true, renderer })
 
-const monacoContainer = ref<HTMLElement | null>(null)
-const editorInstance = shallowRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+const editorContainer = ref<HTMLElement | null>(null)
+const editorInstance = shallowRef<EditorView | null>(null)
+const themeCompartment = new Compartment()
 
 interface TreeNodeData {
   id: string
@@ -830,12 +839,12 @@ async function updateRenderedContent() {
     renderedContent.value = DOMPurify.sanitize(marked.parse(processed) as string)
     return
   }
-  processed = processed.replace(/!\[([^\]]*)\]\((attachment\/[^)]+)\)/g, (_match, alt, path) => {
-    const url = getAttachmentUrl(notebookId, path, token)
+  processed = processed.replace(/!\[([^\]]*)\]\((?:<(attachment\/[^>]+)>|(attachment\/[^)]+))\)/g, (_match, alt, path1, path2) => {
+    const url = getAttachmentUrl(notebookId, path1 || path2, token)
     return `![${alt}](${url})`
   })
-  processed = processed.replace(/(?<!!)\[([^\]]*)\]\((attachment\/[^)]+)\)/g, (_match, text, path) => {
-    const url = getAttachmentUrl(notebookId, path, token)
+  processed = processed.replace(/(?<!!)\[([^\]]*)\]\((?:<(attachment\/[^>]+)>|(attachment\/[^)]+))\)/g, (_match, text, path1, path2) => {
+    const url = getAttachmentUrl(notebookId, path1 || path2, token)
     return `[${text}](${url})`
   })
   renderedContent.value = DOMPurify.sanitize(marked.parse(processed) as string)
@@ -1404,8 +1413,7 @@ async function handleDeleteNode() {
 }
 
 const handlePaste = async (e: ClipboardEvent) => {
-  const editorDom = editorInstance.value?.getDomNode()
-  if (!editorDom || !editorDom.contains(document.activeElement)) return
+  if (!editorInstance.value?.hasFocus) return
   if (!currentNotebook.value) return
   const items = e.clipboardData?.items
   if (!items) return
@@ -1418,7 +1426,7 @@ const handlePaste = async (e: ClipboardEvent) => {
       if (!file) continue
       const attachmentPath = await uploadAttachment(file, true)
       if (attachmentPath) {
-        insertAtCursor(`![image](${attachmentPath})`)
+        insertAtCursor(`![image](<${attachmentPath}>)`)
       }
       break
     }
@@ -1462,12 +1470,10 @@ async function uploadAttachment(file: File, isImage: boolean): Promise<string | 
 }
 
 function insertAtCursor(text: string) {
-  const editor = editorInstance.value
-  if (!editor) return
-  const selection = editor.getSelection()
-  if (selection) {
-    editor.executeEdits('', [{ range: selection, text }])
-  }
+  const view = editorInstance.value
+  if (!view) return
+  const { from, to } = view.state.selection.main
+  view.dispatch({ changes: { from, to, insert: text } })
 }
 
 function triggerImageUpload() {
@@ -1485,7 +1491,7 @@ async function handleImageUpload(e: Event) {
   input.value = ''
   const attachmentPath = await uploadAttachment(file, true)
   if (attachmentPath) {
-    insertAtCursor(`![${file.name}](${attachmentPath})`)
+    insertAtCursor(`![${file.name}](<${attachmentPath}>)`)
   }
 }
 
@@ -1496,48 +1502,66 @@ async function handleFileUpload(e: Event) {
   input.value = ''
   const attachmentPath = await uploadAttachment(file, false)
   if (attachmentPath) {
-    insertAtCursor(`[${file.name}](${attachmentPath})`)
+    insertAtCursor(`[${file.name}](<${attachmentPath}>)`)
   }
 }
 
-function initMonacoEditor() {
-  if (!monacoContainer.value) return
-  if (editorInstance.value) { editorInstance.value.dispose(); editorInstance.value = null }
-  editorInstance.value = monaco.editor.create(monacoContainer.value, {
-    value: noteStore.currentNote?.content || '',
-    language: 'markdown',
-    theme: themeStore.isDark ? 'vs-dark' : 'vs',
-    automaticLayout: true,
-    minimap: { enabled: false },
-    fontSize: 14,
-    lineNumbers: 'on',
-    wordWrap: 'on',
-    scrollBeyondLastLine: false,
-    padding: { top: 12, bottom: 12 },
-    renderLineHighlight: 'line',
-    cursorBlinking: 'smooth',
-    smoothScrolling: true,
+function initEditor() {
+  if (!editorContainer.value) return
+  if (editorInstance.value) { editorInstance.value.destroy(); editorInstance.value = null }
+  const state = EditorState.create({
+    doc: noteStore.currentNote?.content || '',
+    extensions: [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightSpecialChars(),
+      history(),
+      foldGutter(),
+      drawSelection(),
+      indentOnInput(),
+      bracketMatching(),
+      closeBrackets(),
+      autocompletion(),
+      rectangularSelection(),
+      highlightActiveLine(),
+      highlightSelectionMatches(),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      keymap.of([
+        ...closeBracketsKeymap,
+        ...defaultKeymap,
+        ...searchKeymap,
+        ...historyKeymap,
+        ...completionKeymap,
+        indentWithTab,
+      ]),
+      markdown({ codeLanguages: languages }),
+      EditorView.lineWrapping,
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          noteStore.updateContent(update.state.doc.toString())
+        }
+      }),
+      themeCompartment.of(themeStore.isDark ? oneDark : []),
+      EditorView.theme({
+        '&': { height: '100%', fontSize: '14px' },
+        '.cm-scroller': { overflow: 'auto' },
+      }),
+    ],
   })
-  editorInstance.value.onDidChangeModelContent(() => {
-    const value = editorInstance.value?.getValue() || ''
-    noteStore.updateContent(value)
-  })
+  editorInstance.value = new EditorView({ state, parent: editorContainer.value })
   document.addEventListener('paste', handlePaste, true)
 }
 
-function updateMonacoTheme() {
+function updateEditorTheme() {
   if (!editorInstance.value) return
-  monaco.editor.setTheme(themeStore.isDark ? 'vs-dark' : 'vs')
+  themeCompartment.reconfigure(themeStore.isDark ? oneDark : [])
 }
 
 function insertFormat(type: string) {
   if (!editorInstance.value) return
-  const editor = editorInstance.value
-  const selection = editor.getSelection()
-  if (!selection) return
-  const model = editor.getModel()
-  if (!model) return
-  const selectedText = model.getValueInRange(selection)
+  const view = editorInstance.value
+  const { from, to } = view.state.selection.main
+  const selectedText = view.state.sliceDoc(from, to)
   let insertText = ''
   let cursorOffset = 0
   switch (type) {
@@ -1551,14 +1575,14 @@ function insertFormat(type: string) {
     case 'table': insertText = `\n| ${t('notes.tableCol1')} | ${t('notes.tableCol2')} | ${t('notes.tableCol3')} |\n| --- | --- | --- |\n| ${t('notes.tableContent')} | ${t('notes.tableContent')} | ${t('notes.tableContent')} |\n`; break
     default: return
   }
-  const startLineNumber = selection.startLineNumber
-  const startColumn = selection.startColumn
-  editor.executeEdits('', [{ range: selection, text: insertText }])
-  if (type !== 'horizontalRule') {
-    const newPos = new monaco.Position(startLineNumber, startColumn + insertText.length - cursorOffset)
-    editor.setSelection(new monaco.Range(newPos.lineNumber, newPos.column - (selectedText ? 0 : insertText.length - cursorOffset * 2), newPos.lineNumber, newPos.column))
-  }
-  editor.focus()
+  const anchor = from + insertText.length - cursorOffset
+  view.dispatch({
+    changes: { from, to, insert: insertText },
+    selection: type !== 'horizontalRule' && selectedText
+      ? { anchor: from, head: from + insertText.length }
+      : { anchor },
+  })
+  view.focus()
 }
 
 async function handleSaveNote() {
@@ -1608,15 +1632,15 @@ async function handleSaveNote() {
   }
 }
 
-watch(() => themeStore.isDark, () => updateMonacoTheme())
+watch(() => themeStore.isDark, () => updateEditorTheme())
 
 watch(() => noteStore.currentNote, (note) => {
   mobilePreviewMode.value = false
   if (note && !note.isLoading) {
-    nextTick(() => initMonacoEditor())
+    nextTick(() => initEditor())
   } else if (editorInstance.value) {
     document.removeEventListener('paste', handlePaste, true)
-    editorInstance.value.dispose()
+    editorInstance.value.destroy()
     editorInstance.value = null
   }
 }, { immediate: true })
@@ -1625,9 +1649,11 @@ watch(() => noteStore.currentNote?.isLoading, (loading) => {
   if (loading === false && noteStore.currentNote) {
     nextTick(() => {
       if (!editorInstance.value) {
-        initMonacoEditor()
+        initEditor()
       } else {
-        editorInstance.value.setValue(noteStore.currentNote?.content || '')
+        editorInstance.value.dispatch({
+          changes: { from: 0, to: editorInstance.value.state.doc.length, insert: noteStore.currentNote?.content || '' }
+        })
       }
     })
   }
@@ -1831,11 +1857,11 @@ async function handleAttachmentCleanup() {
       if (nb.encrypted && cryptoStore.isUnlocked(contextMenu.notebookId)) {
           try { content = await cryptoStore.decryptContent(contextMenu.notebookId, notePath, content) } catch { /* skip */ }
       }
-      const imgRegex = /!\[.*?\]\((?:\.\/)?attachment\/([^/?)]+)(?:\?[^)]*)?\)/g
-      const linkRegex = /(?<!!)\[.*?\]\((?:\.\/)?attachment\/([^/?)]+)(?:\?[^)]*)?\)/g
+      const imgRegex = /!\[.*?\]\((?:<(?:\.\/)?attachment\/([^>]+)>|(?:\.\/)?attachment\/([^/?)]+))(?:\?[^)]*)?\)/g
+      const linkRegex = /(?<!!)\[.*?\]\((?:<(?:\.\/)?attachment\/([^>]+)>|(?:\.\/)?attachment\/([^/?)]+))(?:\?[^)]*)?\)/g
       let m: RegExpExecArray | null
-      while ((m = imgRegex.exec(content)) !== null) { if (m[1]) referencedNames.add(m[1]) }
-      while ((m = linkRegex.exec(content)) !== null) { if (m[1]) referencedNames.add(m[1]) }
+      while ((m = imgRegex.exec(content)) !== null) { const name = m[1] || m[2]; if (name) referencedNames.add(name) }
+      while ((m = linkRegex.exec(content)) !== null) { const name = m[1] || m[2]; if (name) referencedNames.add(name) }
     } catch { /* skip unreadable notes */ }
     cleanupChecked.value++
   }
@@ -1972,9 +1998,14 @@ async function openSearchResultItem(notebookId: string, path: string, encrypted:
   if (lineNumber !== undefined && editorInstance.value) {
     const targetLine = lineNumber + 1
     nextTick(() => {
-      editorInstance.value?.revealLineInCenter(targetLine)
-      editorInstance.value?.setPosition({ lineNumber: targetLine, column: 1 })
-      editorInstance.value?.focus()
+      const view = editorInstance.value
+      if (!view) return
+      const lineInfo = view.state.doc.line(targetLine)
+      view.dispatch({
+        selection: { anchor: lineInfo.from },
+        effects: EditorView.scrollIntoView(lineInfo.from, { y: 'center' }),
+      })
+      view.focus()
     })
   }
 }
@@ -2091,7 +2122,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('beforeunload', handleBeforeUnload)
   document.removeEventListener('paste', handlePaste, true)
-  if (editorInstance.value) { editorInstance.value.dispose(); editorInstance.value = null }
+  if (editorInstance.value) { editorInstance.value.destroy(); editorInstance.value = null }
   if (renderTimer) { clearTimeout(renderTimer); renderTimer = null }
 })
 </script>
@@ -2159,7 +2190,9 @@ onUnmounted(() => {
 .toolbar-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 4px; cursor: pointer; color: var(--el-text-color-regular); transition: all 0.2s; }
 .toolbar-btn:hover { background: var(--el-fill-color); color: var(--el-color-primary); }
 .toolbar-divider { width: 1px; height: 18px; background: var(--el-border-color-lighter); margin: 0 6px; }
-.monaco-container { flex: 1; min-height: 0; }
+.editor-container { flex: 1; min-height: 0; }
+.editor-container .cm-editor { height: 100%; }
+.editor-container .cm-editor .cm-scroller { overflow: auto; }
 .editor-divider { width: 1px; background: var(--el-border-color-lighter); flex-shrink: 0; }
 .preview-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 .preview-container { flex: 1; overflow-y: auto; padding: 16px; color: var(--el-text-color-primary); line-height: 1.6; }

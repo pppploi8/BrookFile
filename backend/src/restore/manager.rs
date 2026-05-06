@@ -15,6 +15,7 @@ pub struct RestoreStartError {
 }
 
 const INDEX_FILE: &str = ".index";
+const INFO_FILE: &str = ".info";
 const MAX_CONCURRENT_DOWNLOADS: usize = 5;
 const CLEANUP_INTERVAL_SECS: u64 = 60;
 const IDLE_TIMEOUT_SECS: i64 = 300;
@@ -93,23 +94,41 @@ impl RestoreManager {
             return Err(RestoreStartError { fail_code: "STORAGE_CONNECTION_ERROR", message: Some(e.to_string()) });
         }
 
-        let index_entries = Self::load_index(&backend, config.encrypted, config.backup_password.as_deref()).await?;
+        let derived_password = if config.encrypted {
+            let info = Self::load_info(&backend).await;
+            let derived = if let Some(info) = info {
+                crate::models::backup_rule::encrypt_password_with_params(
+                    config.backup_password.as_ref().unwrap(),
+                    &info.kdf,
+                )
+            } else {
+                crate::models::backup_rule::encrypt_password_string(
+                    config.backup_password.as_ref().unwrap(),
+                )
+            };
+            match derived {
+                Ok(d) => Some(d),
+                Err(e) => return Err(RestoreStartError { fail_code: "DECRYPTION_FAILED", message: Some(e) }),
+            }
+        } else {
+            None
+        };
+
+        let index_entries = Self::load_index(&backend, config.encrypted, derived_password.as_deref()).await?;
 
         if index_entries.is_empty() {
             return Err(RestoreStartError { fail_code: "INDEX_NOT_FOUND", message: None });
         }
 
-        // 3. 创建任务
         let task = Arc::new(RestoreTask::new(
             config.user_id.clone(),
             config.clone(),
             config.target_path.clone(),
             config.encrypted,
-            config.backup_password.clone(),
+            derived_password,
         ));
         let task_id = task.id.clone();
 
-        // 4. 设置待下载文件列表
         {
             let mut pending = task.pending_files.write().await;
             *pending = index_entries.iter().map(|(path, size, sha256, file_id)| RestorePendingItem {
@@ -124,19 +143,16 @@ impl RestoreManager {
         }
         task.total_count.store(index_entries.len() as u64, Ordering::Relaxed);
 
-        // 5. 注册任务
         {
             let mut tasks = self.running_tasks.write().await;
             tasks.insert(task_id.clone(), Arc::clone(&task));
         }
 
-        // 6. 启动下载任务
         let task_clone = Arc::clone(&task);
-        let config_clone = config.clone();
         let backend = Arc::new(backend);
 
         tokio::spawn(async move {
-            Self::execute_restore_task(task_clone, config_clone, backend).await;
+            Self::execute_restore_task(task_clone, backend).await;
         });
 
         Ok(task_id)
@@ -230,9 +246,9 @@ impl RestoreManager {
 
             let task_clone = Arc::clone(&task);
             let file_path_owned = file_path.to_string();
-            let target_path = task_clone.config.target_path.clone();
-            let encrypted = task_clone.config.encrypted;
-            let password = task_clone.config.backup_password.clone();
+            let target_path = task_clone.target_path.clone();
+            let encrypted = task_clone.encrypted;
+            let password = task_clone.backup_password.clone();
             let storage_type = task_clone.config.storage_type.clone();
             let storage_config = task_clone.config.storage_config.clone();
 
@@ -494,10 +510,8 @@ impl RestoreManager {
     /// 执行恢复任务
     async fn execute_restore_task(
         task: Arc<RestoreTask>,
-        config: RestoreConfig,
         backend: Arc<Box<dyn StorageBackend>>,
     ) {
-        // 获取待下载文件列表
         let files_to_download: Vec<(String, u64, Option<String>, String)> = {
             let pending = task.pending_files.read().await;
             pending.iter().map(|item| (item.name.clone(), item.total_bytes, item.file_id.clone(), item.sha256.clone())).collect()
@@ -511,9 +525,9 @@ impl RestoreManager {
         let download_tasks: Vec<_> = files_to_download.into_iter().map(|(relative_path, size, file_id, sha256)| {
             let task = Arc::clone(&task);
             let backend = Arc::clone(&backend);
-            let target_path = config.target_path.clone();
-            let encrypted = config.encrypted;
-            let password = config.backup_password.clone();
+            let target_path = task.target_path.clone();
+            let encrypted = task.encrypted;
+            let password = task.backup_password.clone();
 
             async move {
                 if task.is_cancelled() {
@@ -782,6 +796,11 @@ impl RestoreManager {
         }
 
         Ok(entries)
+    }
+
+    async fn load_info(backend: &Box<dyn StorageBackend>) -> Option<crate::models::backup_rule::BackupInfo> {
+        let data = backend.download_file(INFO_FILE).await.ok()?;
+        serde_json::from_slice(&data).ok()
     }
 
     /// 创建存储后端

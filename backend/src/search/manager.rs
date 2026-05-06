@@ -490,6 +490,17 @@ impl SearchManager {
         };
 
         let keyword_lower = keyword.to_lowercase();
+
+        for note_path in meta_map.keys() {
+            let title = PathBuf::from(note_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| note_path.clone());
+            if title.to_lowercase().contains(&keyword_lower) && !note_matches.contains_key(note_path) {
+                note_matches.entry(note_path.clone()).or_default();
+            }
+        }
+
         let mut results = Vec::new();
 
         for (note_path, mut matches_list) in note_matches {

@@ -131,6 +131,13 @@ export async function login(data: LoginRequest): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/auth/login', data })
 }
 
+export async function ping(): Promise<void> {
+  try {
+    await request<ApiResponse>({ method: 'POST', url: '/auth/ping', skipErrorMessage: true })
+  } catch {
+  }
+}
+
 export async function logout(): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/auth/logout' })
 }

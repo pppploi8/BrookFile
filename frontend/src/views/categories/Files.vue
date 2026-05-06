@@ -106,21 +106,21 @@
         </template>
       </el-table-column>
 
-      <el-table-column :label="t('files.operations')" width="260" fixed="right">
+      <el-table-column :label="t('files.operations')" :width="isMobileLayout ? 140 : 260" fixed="right">
         <template #default="{ row }">
           <template v-if="row.file_type === 'parent'">
           </template>
           <template v-else-if="row.file_type === 'directory'">
-            <el-link type="primary" :icon="Share" @click="handleShare(row)">{{ t('share.shareAction') }}</el-link>
-            <el-link type="primary" :icon="Download" @click="handleFolderDownload(row)">{{ t('files.download') }}</el-link>
-            <el-link type="primary" :icon="Edit" @click="handleRename(row)">{{ t('common.rename') }}</el-link>
-            <el-link type="danger" :icon="Delete" @click="handleDelete(row)">{{ t('files.delete') }}</el-link>
+            <el-link type="primary" :icon="Share" @click="handleShare(row)"><span v-if="!isMobileLayout">{{ t('share.shareAction') }}</span></el-link>
+            <el-link type="primary" :icon="Download" @click="handleFolderDownload(row)"><span v-if="!isMobileLayout">{{ t('files.download') }}</span></el-link>
+            <el-link type="primary" :icon="Edit" @click="handleRename(row)"><span v-if="!isMobileLayout">{{ t('common.rename') }}</span></el-link>
+            <el-link type="danger" :icon="Delete" @click="handleDelete(row)"><span v-if="!isMobileLayout">{{ t('files.delete') }}</span></el-link>
           </template>
           <template v-else>
-            <el-link type="primary" :icon="Share" @click="handleShare(row)">{{ t('share.shareAction') }}</el-link>
-            <el-link type="primary" :icon="Download" @click="handleDownload(row)">{{ t('files.download') }}</el-link>
-            <el-link type="primary" :icon="Edit" @click="handleRename(row)">{{ t('common.rename') }}</el-link>
-            <el-link type="danger" :icon="Delete" @click="handleDelete(row)">{{ t('files.delete') }}</el-link>
+            <el-link type="primary" :icon="Share" @click="handleShare(row)"><span v-if="!isMobileLayout">{{ t('share.shareAction') }}</span></el-link>
+            <el-link type="primary" :icon="Download" @click="handleDownload(row)"><span v-if="!isMobileLayout">{{ t('files.download') }}</span></el-link>
+            <el-link type="primary" :icon="Edit" @click="handleRename(row)"><span v-if="!isMobileLayout">{{ t('common.rename') }}</span></el-link>
+            <el-link type="danger" :icon="Delete" @click="handleDelete(row)"><span v-if="!isMobileLayout">{{ t('files.delete') }}</span></el-link>
           </template>
         </template>
       </el-table-column>
@@ -1864,6 +1864,10 @@ const handleCreateShare = async () => {
 
 .files-container.is-mobile .search-input {
   display: none !important;
+}
+
+.files-container.is-mobile .el-link .el-icon {
+  margin-right: 0;
 }
 
 .share-drawer-loading {

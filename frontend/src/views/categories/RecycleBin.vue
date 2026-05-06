@@ -54,13 +54,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('files.operations')" width="160" fixed="right">
+        <el-table-column :label="t('files.operations')" :width="isMobileLayout ? 80 : 160" fixed="right">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleRestore(row)">
-              {{ t('recycleBin.restore') }}
+            <el-link type="primary" :icon="RefreshRight" @click="handleRestore(row)">
+              <span v-if="!isMobileLayout">{{ t('recycleBin.restore') }}</span>
             </el-link>
-            <el-link type="danger" @click="handlePermanentDelete(row)">
-              {{ t('recycleBin.permanentDelete') }}
+            <el-link type="danger" :icon="Delete" @click="handlePermanentDelete(row)">
+              <span v-if="!isMobileLayout">{{ t('recycleBin.permanentDelete') }}</span>
             </el-link>
           </template>
         </el-table-column>
@@ -101,7 +101,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from '@/utils/message'
 import { ElMessageBox } from 'element-plus'
-import { Search, Folder, Document } from '@element-plus/icons-vue'
+import { Search, Folder, Document, RefreshRight, Delete } from '@element-plus/icons-vue'
 import { formatUtcDatetimeString } from '@/utils/date'
 import { formatFileSize } from '@/utils/format'
 import {
@@ -194,12 +194,23 @@ const sortByDeletedAt = (a: RecycleBinItem, b: RecycleBinItem): number => {
   return new Date(a.deleted_at).getTime() - new Date(b.deleted_at).getTime()
 }
 
-const handleRestore = async (row: RecycleBinItem) => {
-  try {
-    await restoreRecycleItem(row.id)
-    ElMessage.success({ __key: 'recycleBin.restoreSuccess' })
-    loadList()
-  } catch {}
+const handleRestore = (row: RecycleBinItem) => {
+  ElMessageBox.confirm(
+    t('recycleBin.restoreConfirm'),
+    t('common.confirm'),
+    {
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
+      type: 'info',
+      customClass: 'mobile-message-box'
+    }
+  ).then(async () => {
+    try {
+      await restoreRecycleItem(row.id)
+      ElMessage.success({ __key: 'recycleBin.restoreSuccess' })
+      loadList()
+    } catch {}
+  }).catch(() => {})
 }
 
 const handlePermanentDelete = (row: RecycleBinItem) => {
@@ -408,5 +419,9 @@ const handleEmptyRecycleBin = () => {
 
 .recycle-bin-container.is-mobile .btn-text {
   margin-left: 0;
+}
+
+.recycle-bin-container.is-mobile .el-link .el-icon {
+  margin-right: 0;
 }
 </style>

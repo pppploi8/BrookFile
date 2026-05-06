@@ -36,6 +36,9 @@ export default
     recycleBinPath: '回收站路径',
     recycleBinPathPlaceholder: '留空则不开启回收站',
   },
+  app: {
+    loadFailed: '网络连接失败，正在重试...',
+  },
   login: {
     title: '登录到您的账户',
     username: '账号',
@@ -672,6 +675,7 @@ export default
     permanentDeleteConfirm: '确定要永久删除该项吗？此操作不可恢复。',
     searchPlaceholderCurrentPage: '搜索当前页...',
     restoreSuccess: '恢复成功',
+    restoreConfirm: '确定要恢复该项吗？',
     deleteSuccess: '已永久删除',
     emptySuccess: '回收站已清空',
     file: '文件',

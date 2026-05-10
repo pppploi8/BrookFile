@@ -38,7 +38,6 @@ pub fn configure(app: &mut web::ServiceConfig, app_state: web::Data<AppState>) {
             web::get().to(handlers::get_system_logo),
         )
         .route("/api/auth/login", web::post().to(handlers::login))
-        .route("/api/auth/ping", web::post().to(handlers::ping))
         .route("/api/auth/logout", web::post().to(handlers::logout))
         .route("/api/file/browse", web::post().to(handlers::browse_files))
         .route(

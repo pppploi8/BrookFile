@@ -88,15 +88,6 @@ async fn main() -> std::io::Result<()> {
 
     let system_config_model = models::SystemConfigModel::new(&database.pool);
 
-    let session_timeout: u64 = match system_config_model.get_config("session_timeout") {
-        Ok(Some(v)) => v.parse().unwrap_or(1800),
-        _ => {
-            let default: u64 = 1800;
-            let _ = system_config_model.set_config("session_timeout", &default.to_string());
-            default
-        }
-    };
-
     let fulltext_enabled = match system_config_model.get_config("notebook_fulltext_search") {
         Ok(Some(v)) => v == "true",
         _ => {
@@ -110,8 +101,8 @@ async fn main() -> std::io::Result<()> {
     };
     println!("Fulltext search: {}", fulltext_enabled);
 
-    let session_manager = session_manager::SessionManager::new(session_timeout);
-    println!("SessionManager initialized (timeout: {}s)", session_timeout);
+    let session_manager = session_manager::SessionManager::new(database.pool.clone());
+    println!("SessionManager initialized");
 
     let backup_manager = Arc::new(BackupManager::new(database.pool.clone()));
     backup_manager.handle_startup_interrupted_tasks().await;

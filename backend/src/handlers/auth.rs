@@ -90,6 +90,8 @@ pub async fn login(
                     if let Some(root_path) = &user.root_path {
                         app_state.session_manager.set(&new_session_id, "root_path", root_path);
                     }
+                    app_state.session_manager.enforce_max_devices(&user.id);
+                    app_state.session_manager.persist_session(&new_session_id);
 
                     HttpResponse::Ok().json(ApiResponse {
                         success: true,
@@ -127,13 +129,6 @@ pub async fn login(
             })
         }
     }
-}
-
-pub async fn ping() -> impl Responder {
-    HttpResponse::Ok().json(ApiResponse {
-        success: true,
-        fail_code: None,
-    })
 }
 
 pub async fn logout(http_req: HttpRequest, app_state: web::Data<AppState>) -> impl Responder {

@@ -46,10 +46,12 @@ python backend/test_user_api.py           # 用户管理测试
 python backend/test_vault_api.py          # 保险箱测试
 python backend/test_webdav_api.py         # WebDAV 测试
 python backend/test_webdav_protocol.py    # WebDAV 协议测试
+python backend/test_session_api.py        # Session 管理测试
 
 # 前端页面测试
 python frontend/test_system_init.py       # 系统初始化页面测试
 python frontend/test_login.py             # 登录页面测试
+python frontend/test_session_persistence.py # Session 持久化测试（重启后端后刷新页面）
 python frontend/test_file_manager.py      # 文件管理器页面测试
 python frontend/test_notes.py             # 笔记页面测试
 python frontend/test_passwords.py         # 密码管理页面测试

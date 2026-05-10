@@ -14,3 +14,5 @@
 | initialized | 系统是否已初始化，值为 "true" 或 "false" |
 | version | 数据库版本号 |
 | system_name | 系统名称，显示在登录页和主页标题 |
+| session_timeout_days | 会话有效期（天），默认 7 |
+| max_login_devices | 最大登录设备数，默认 3 |

@@ -958,6 +958,57 @@ function reloadNotebookNode(nbId: string) {
   }
 }
 
+function removeTreeNode(nodeId: string) {
+  const node = treeRef.value?.store.nodesMap[nodeId]
+  if (!node) return
+  const parent = node.parent
+  treeRef.value?.remove(node.data)
+  if (parent && parent.childNodes.length === 0 && !parent.data.isNotebook && !parent.data.isRoot) {
+    parent.data.isLeaf = true
+  }
+}
+
+function renameTreeNode(
+  nbId: string, oldPath: string, newPath: string, newLabel: string, isFolder: boolean,
+) {
+  const prefix = isFolder ? 'folder' : 'note'
+  const oldNodeId = `${prefix}-${nbId}-${oldPath}`
+  const newNodeId = `${prefix}-${nbId}-${newPath}`
+  const store = treeRef.value?.store
+  const oldNode = store?.nodesMap[oldNodeId]
+  if (!oldNode || !store) return
+
+  const parent = oldNode.parent
+  if (!parent) return
+
+  const wasSelected = treeRef.value?.getCurrentKey() === oldNodeId
+  const siblings = parent.childNodes
+  const oldIndex = siblings.findIndex((n: any) => n.data?.id === oldNodeId)
+  const nextSibling = oldIndex >= 0 && oldIndex + 1 < siblings.length ? siblings[oldIndex + 1] : null
+
+  const newData: TreeNodeData = {
+    id: newNodeId,
+    label: newLabel,
+    isFolder: isFolder ? true : undefined,
+    isNote: isFolder ? undefined : true,
+    notebookId: nbId,
+    path: newPath,
+    isLeaf: !isFolder,
+  }
+
+  treeRef.value?.remove(oldNode.data)
+
+  if (nextSibling) {
+    treeRef.value?.insertBefore(newData, nextSibling.data)
+  } else {
+    treeRef.value?.append(newData, parent.data)
+  }
+
+  if (wasSelected) {
+    treeRef.value?.setCurrentKey(newNodeId)
+  }
+}
+
 async function loadNotebookNode(node: any, resolve: (data: TreeNodeData[]) => void) {
   const data: TreeNodeData = node.data
   if (data.isRoot) {
@@ -1391,7 +1442,7 @@ async function handleDeleteNode() {
         noteStore.currentNote.isDirty = false
         noteStore.closeNote()
       }
-      reloadNotebookNode(nbId)
+      removeTreeNode(`folder-${nbId}-${path}`)
       ElMessage.success({ __key: 'notes.deleteFolderSuccess' })
     } else {
       ElMessage.error({ __key: `errors.${res.fail_code}` })
@@ -1404,7 +1455,7 @@ async function handleDeleteNode() {
         noteStore.currentNote.isDirty = false
         noteStore.closeNote()
       }
-      reloadNotebookNode(nbId)
+      removeTreeNode(`note-${nbId}-${path}`)
       ElMessage.success({ __key: 'notes.deleteNoteSuccess' })
     } else {
       ElMessage.error({ __key: 'common.error' })
@@ -1807,7 +1858,7 @@ async function handleDeleteAttachment() {
   const res = await notebookStore.batchDeleteFiles(contextMenu.notebookId, [contextMenu.path])
   if (res.success) {
     ElMessage.success({ __key: 'notes.deleteAttachmentSuccess' })
-    reloadNotebookNode(contextMenu.notebookId)
+    removeTreeNode(`attachment-${contextMenu.notebookId}-${contextMenu.path}`)
   } else {
     ElMessage.error({ __key: 'notes.deleteAttachmentFailed' })
   }
@@ -1885,7 +1936,9 @@ async function executeCleanup() {
   cleanupPhase.value = 'cleaning'
   const res = await notebookStore.batchDeleteFiles(cleanupNotebookId.value, cleanupUnreferenced.value)
   if (res.success) {
-    reloadNotebookNode(cleanupNotebookId.value)
+    for (const p of cleanupUnreferenced.value) {
+      removeTreeNode(`attachment-${cleanupNotebookId.value}-${p}`)
+    }
     cleanupPhase.value = 'done'
   } else {
     ElMessage.error({ __key: 'notes.attachmentCleanupFailed' })
@@ -2073,7 +2126,8 @@ async function submitRename() {
       noteStore.openNote(nbId, openPath, encrypted, renameFormName.value.trim())
     }
     renameDialogVisible.value = false
-    reloadNotebookNode(nbId)
+    const newPath = newServerPath || (oldPath.includes('/') ? oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + newName : newName)
+    renameTreeNode(nbId, oldPath, newPath, renameFormName.value.trim(), isFolder)
     ElMessage.success({ __key: 'notes.renameNoteSuccess' })
   } else {
     ElMessage.error({ __key: `errors.${res.fail_code}` })

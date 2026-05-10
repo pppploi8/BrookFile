@@ -214,7 +214,8 @@ pub struct SystemSettingsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fail_code: Option<String>,
     pub system_name: String,
-    pub session_timeout: u64,
+    pub session_timeout_days: u64,
+    pub max_login_devices: u64,
     pub notebook_fulltext_search: bool,
     pub has_logo: bool,
 }
@@ -232,9 +233,14 @@ pub async fn get_settings(
         _ => "BrookFile".to_string(),
     };
 
-    let session_timeout: u64 = match app_state.system_config_model.get_config("session_timeout") {
-        Ok(Some(v)) => v.parse().unwrap_or(1800),
-        _ => 1800,
+    let session_timeout_days: u64 = match app_state.system_config_model.get_config("session_timeout_days") {
+        Ok(Some(v)) => v.parse().unwrap_or(7),
+        _ => 7,
+    };
+
+    let max_login_devices: u64 = match app_state.system_config_model.get_config("max_login_devices") {
+        Ok(Some(v)) => v.parse().unwrap_or(3),
+        _ => 3,
     };
 
     let notebook_fulltext_search = match app_state.system_config_model.get_config("notebook_fulltext_search") {
@@ -252,7 +258,8 @@ pub async fn get_settings(
         success: true,
         fail_code: None,
         system_name,
-        session_timeout,
+        session_timeout_days,
+        max_login_devices,
         notebook_fulltext_search,
         has_logo,
     })
@@ -261,7 +268,8 @@ pub async fn get_settings(
 #[derive(Debug, Deserialize)]
 pub struct UpdateSettingsRequest {
     pub system_name: String,
-    pub session_timeout: u64,
+    pub session_timeout_days: u64,
+    pub max_login_devices: u64,
     pub notebook_fulltext_search: bool,
 }
 
@@ -281,7 +289,14 @@ pub async fn update_settings(
         });
     }
 
-    if body.session_timeout == 0 {
+    if body.session_timeout_days == 0 {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some("INVALID_PARAM".to_string()),
+        });
+    }
+
+    if body.max_login_devices == 0 {
         return HttpResponse::Ok().json(ApiResponse {
             success: false,
             fail_code: Some("INVALID_PARAM".to_string()),
@@ -291,9 +306,13 @@ pub async fn update_settings(
     if let Err(e) = app_state.system_config_model.set_config("system_name", body.system_name.trim()) {
         return internal_error_response("/api/system/update_settings", &e);
     }
-    if let Err(e) = app_state.system_config_model.set_config("session_timeout", &body.session_timeout.to_string()) {
+    if let Err(e) = app_state.system_config_model.set_config("session_timeout_days", &body.session_timeout_days.to_string()) {
         return internal_error_response("/api/system/update_settings", &e);
     }
+    if let Err(e) = app_state.system_config_model.set_config("max_login_devices", &body.max_login_devices.to_string()) {
+        return internal_error_response("/api/system/update_settings", &e);
+    }
+    app_state.session_manager.update_config(body.session_timeout_days, body.max_login_devices);
     let old_fulltext = match app_state.system_config_model.get_config("notebook_fulltext_search") {
         Ok(Some(v)) => v == "true",
         _ => !body.notebook_fulltext_search,

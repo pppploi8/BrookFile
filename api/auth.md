@@ -42,7 +42,7 @@
 **认证机制说明**：
 - 登录成功后，服务器通过 `Set-Cookie` 返回 Session ID（`HttpOnly`、`SameSite=Lax`），后续请求需携带此 Cookie
 - Session Cookie 不设置 `Secure` 标志，以支持局域网 HTTP 部署场景。如需强制 HTTPS，请在反向代理层配置
-- Session 超时时间默认 1800 秒（30 分钟），可通过 `config.json` 的 `session_timeout` 配置
+- Session 有效期默认 7 天，可通过系统设置中的 `session_timeout_days` 配置，支持持久化到数据库，重启后端后自动恢复
 
 ## 2. 退出登录接口
 

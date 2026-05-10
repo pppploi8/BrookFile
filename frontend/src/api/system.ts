@@ -131,13 +131,6 @@ export async function login(data: LoginRequest): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/auth/login', data })
 }
 
-export async function ping(): Promise<void> {
-  try {
-    await request<ApiResponse>({ method: 'POST', url: '/auth/ping', skipErrorMessage: true })
-  } catch {
-  }
-}
-
 export async function logout(): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/auth/logout' })
 }
@@ -1228,14 +1221,16 @@ export interface SystemSettingsResponse {
   success: boolean
   fail_code?: string
   system_name: string
-  session_timeout: number
+  session_timeout_days: number
+  max_login_devices: number
   notebook_fulltext_search: boolean
   has_logo: boolean
 }
 
 export interface UpdateSystemSettingsRequest {
   system_name: string
-  session_timeout: number
+  session_timeout_days: number
+  max_login_devices: number
   notebook_fulltext_search: boolean
 }
 

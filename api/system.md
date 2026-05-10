@@ -145,7 +145,7 @@
 
 **路径**：POST /api/system/get_settings
 
-**功能**：获取系统设置，包括系统名称、会话超时、笔记全文搜索状态。仅管理员可调用。
+**功能**：获取系统设置，包括系统名称、会话有效期、最大登录设备数、笔记全文搜索状态。仅管理员可调用。
 
 **请求参数**：无
 
@@ -156,7 +156,8 @@
 {
   "success": true,
   "system_name": "BrookFile",
-  "session_timeout": 1800,
+  "session_timeout_days": 7,
+  "max_login_devices": 3,
   "notebook_fulltext_search": true,
   "has_logo": false
 }
@@ -165,7 +166,8 @@
 | 字段 | 类型 | 说明 |
 |-----|------|------|
 | system_name | string | 系统名称 |
-| session_timeout | number | 会话超时时间（秒） |
+| session_timeout_days | number | 会话有效期（天） |
+| max_login_devices | number | 最大登录设备数 |
 | notebook_fulltext_search | boolean | 是否启用笔记全文搜索 |
 | has_logo | boolean | 是否已上传系统 Logo |
 
@@ -179,7 +181,8 @@
 ```json
 {
   "system_name": "BrookFile",
-  "session_timeout": 1800,
+  "session_timeout_days": 7,
+  "max_login_devices": 3,
   "notebook_fulltext_search": true
 }
 ```
@@ -187,7 +190,8 @@
 | 字段 | 类型 | 必填 | 说明 |
 |-----|------|------|------|
 | system_name | string | 是 | 系统名称，不能为空 |
-| session_timeout | number | 是 | 会话超时时间（秒），最小 60 |
+| session_timeout_days | number | 是 | 会话有效期（天），最小 1 |
+| max_login_devices | number | 是 | 最大登录设备数，最小 1 |
 | notebook_fulltext_search | boolean | 是 | 是否启用笔记全文搜索 |
 
 **返回值**：
@@ -210,7 +214,7 @@
 **错误编码说明**：
 | 错误编码 | 说明 |
 |---------|------|
-| `INVALID_PARAM` | 系统名称为空或会话超时为 0 |
+| `INVALID_PARAM` | 系统名称为空、会话有效期为 0 或最大登录设备数为 0 |
 
 ## 6. 重建笔记索引
 

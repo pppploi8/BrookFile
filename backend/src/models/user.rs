@@ -353,14 +353,7 @@ impl UserModel {
 
         tx.commit().map_err(|e| e.to_string())?;
 
-        let all_sessions = session_manager.get_all_session_ids();
-        for session_id in all_sessions {
-            if let Some(uid) = session_manager.get_user_id(&session_id) {
-                if uid == user_id {
-                    session_manager.invalidate(&session_id);
-                }
-            }
-        }
+        session_manager.invalidate_user_sessions(user_id);
 
         Ok(())
     }
@@ -426,14 +419,7 @@ impl UserModel {
             params![password_hash, "", user_id],
         ).map_err(|e| e.to_string())?;
 
-        let all_sessions = session_manager.get_all_session_ids();
-        for session_id in all_sessions {
-            if let Some(uid) = session_manager.get_user_id(&session_id) {
-                if uid == user_id {
-                    session_manager.invalidate(&session_id);
-                }
-            }
-        }
+        session_manager.invalidate_user_sessions(user_id);
 
         Ok(())
     }

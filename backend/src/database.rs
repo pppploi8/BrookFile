@@ -239,6 +239,26 @@ impl Database {
         );
 
         conn.execute(
+            "CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                last_access_time INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_last_access ON sessions(last_access_time)",
+            [],
+        )?;
+
+        conn.execute(
             "INSERT OR IGNORE INTO system_config (key, value) VALUES ('system_name', 'BrookFile')",
             [],
         )?;

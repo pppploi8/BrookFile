@@ -166,11 +166,19 @@ export const useNotebookStore = defineStore('notebook', () => {
   }
 
   async function batchDeleteFiles(notebookId: string, paths: string[]) {
-    return apiBatchDeleteNotebookFiles({ notebook_id: notebookId, paths })
+    const res = await apiBatchDeleteNotebookFiles({ notebook_id: notebookId, paths })
+    if (res.success) {
+      await fetchFileTree(notebookId)
+    }
+    return res
   }
 
   async function deleteFolder(notebookId: string, path: string) {
-    return apiDeleteNotebookFolder(notebookId, path)
+    const res = await apiDeleteNotebookFolder(notebookId, path)
+    if (res.success) {
+      await fetchFileTree(notebookId)
+    }
+    return res
   }
 
   async function getAttachmentToken(notebookId: string): Promise<string> {

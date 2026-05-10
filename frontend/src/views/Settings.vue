@@ -42,8 +42,13 @@
                 </div>
 
                 <div class="form-item">
-                  <label class="form-label">{{ t('settings.sessionTimeout') }} <span class="restart-hint">{{ t('settings.restartRequired') }}</span></label>
-                  <el-input-number v-model="form.session_timeout" :min="60" :step="60" />
+                  <label class="form-label">{{ t('settings.sessionTimeoutDays') }}</label>
+                  <el-input-number v-model="form.session_timeout_days" :min="1" />
+                </div>
+
+                <div class="form-item">
+                  <label class="form-label">{{ t('settings.maxLoginDevices') }}</label>
+                  <el-input-number v-model="form.max_login_devices" :min="1" />
                 </div>
 
                 <div class="form-item">
@@ -94,7 +99,8 @@ const userStore = useUserStore()
 
 const form = ref({
   system_name: '',
-  session_timeout: 1800,
+  session_timeout_days: 7,
+  max_login_devices: 3,
   notebook_fulltext_search: true,
 })
 const logoUrl = ref<string | null>(null)
@@ -108,7 +114,8 @@ onMounted(async () => {
     const res = await getSystemSettings()
     if (res.success) {
       form.value.system_name = res.system_name
-      form.value.session_timeout = res.session_timeout
+      form.value.session_timeout_days = res.session_timeout_days
+      form.value.max_login_devices = res.max_login_devices
       form.value.notebook_fulltext_search = res.notebook_fulltext_search
     }
   } catch {}

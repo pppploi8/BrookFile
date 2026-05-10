@@ -254,7 +254,7 @@ import {
   Share,
   Delete
 } from '@element-plus/icons-vue'
-import { logout, fetchAvatar, ping } from '@/api'
+import { logout, fetchAvatar } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
 
@@ -271,7 +271,6 @@ const routeLoading = ref(false)
 const pendingPath = ref<string | null>(null)
 
 let routeLoadingTimer: ReturnType<typeof setTimeout> | null = null
-let pingTimer: ReturnType<typeof setInterval> | null = null
 
 const beforeGuard = router.beforeEach((to, from) => {
   if (to.path !== from.path && to.path.startsWith('/')) {
@@ -315,7 +314,6 @@ onUnmounted(() => {
     URL.revokeObjectURL(avatarUrl.value)
   }
   if (routeLoadingTimer) { clearTimeout(routeLoadingTimer); routeLoadingTimer = null }
-  if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
   beforeGuard()
   window.removeEventListener('resize', checkLayout)
 })
@@ -435,8 +433,6 @@ onMounted(() => {
   loadAvatar()
   checkLayout()
   window.addEventListener('resize', checkLayout)
-  ping()
-  pingTimer = setInterval(ping, 60000)
 })
 </script>
 

@@ -633,6 +633,56 @@ import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js/lib/core'
+import hljsJavascript from 'highlight.js/lib/languages/javascript'
+import hljsTypescript from 'highlight.js/lib/languages/typescript'
+import hljsPython from 'highlight.js/lib/languages/python'
+import hljsRust from 'highlight.js/lib/languages/rust'
+import hljsSql from 'highlight.js/lib/languages/sql'
+import hljsXml from 'highlight.js/lib/languages/xml'
+import hljsCss from 'highlight.js/lib/languages/css'
+import hljsJson from 'highlight.js/lib/languages/json'
+import hljsBash from 'highlight.js/lib/languages/bash'
+import hljsShell from 'highlight.js/lib/languages/shell'
+import hljsJava from 'highlight.js/lib/languages/java'
+import hljsCpp from 'highlight.js/lib/languages/cpp'
+import hljsC from 'highlight.js/lib/languages/c'
+import hljsGo from 'highlight.js/lib/languages/go'
+import hljsYaml from 'highlight.js/lib/languages/yaml'
+import hljsMarkdown from 'highlight.js/lib/languages/markdown'
+import hljsPlaintext from 'highlight.js/lib/languages/plaintext'
+import hljsDiff from 'highlight.js/lib/languages/diff'
+import hljsIni from 'highlight.js/lib/languages/ini'
+import hljsDockerfile from 'highlight.js/lib/languages/dockerfile'
+
+hljs.registerLanguage('javascript', hljsJavascript)
+hljs.registerLanguage('js', hljsJavascript)
+hljs.registerLanguage('typescript', hljsTypescript)
+hljs.registerLanguage('ts', hljsTypescript)
+hljs.registerLanguage('python', hljsPython)
+hljs.registerLanguage('py', hljsPython)
+hljs.registerLanguage('rust', hljsRust)
+hljs.registerLanguage('sql', hljsSql)
+hljs.registerLanguage('html', hljsXml)
+hljs.registerLanguage('xml', hljsXml)
+hljs.registerLanguage('css', hljsCss)
+hljs.registerLanguage('json', hljsJson)
+hljs.registerLanguage('bash', hljsBash)
+hljs.registerLanguage('shell', hljsShell)
+hljs.registerLanguage('sh', hljsShell)
+hljs.registerLanguage('java', hljsJava)
+hljs.registerLanguage('cpp', hljsCpp)
+hljs.registerLanguage('c', hljsC)
+hljs.registerLanguage('go', hljsGo)
+hljs.registerLanguage('yaml', hljsYaml)
+hljs.registerLanguage('yml', hljsYaml)
+hljs.registerLanguage('markdown', hljsMarkdown)
+hljs.registerLanguage('md', hljsMarkdown)
+hljs.registerLanguage('plaintext', hljsPlaintext)
+hljs.registerLanguage('text', hljsPlaintext)
+hljs.registerLanguage('diff', hljsDiff)
+hljs.registerLanguage('ini', hljsIni)
+hljs.registerLanguage('dockerfile', hljsDockerfile)
 
 const { t } = useI18n()
 const themeStore = useThemeStore()
@@ -645,6 +695,11 @@ const originalLink = renderer.link
 renderer.link = function (this: any, token: any) {
   const html = originalLink.call(this, token)
   return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ')
+}
+renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
+  const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
+  const highlighted = hljs.highlight(text, { language }).value
+  return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
 }
 marked.setOptions({ gfm: true, breaks: true, renderer })
 
@@ -1605,7 +1660,9 @@ function initEditor() {
 
 function updateEditorTheme() {
   if (!editorInstance.value) return
-  themeCompartment.reconfigure(themeStore.isDark ? oneDark : [])
+  editorInstance.value.dispatch({
+    effects: themeCompartment.reconfigure(themeStore.isDark ? oneDark : [])
+  })
 }
 
 function insertFormat(type: string) {
@@ -2261,6 +2318,35 @@ onUnmounted(() => {
 .preview-container :deep(code) { padding: .2em .4em; margin: 0; font-size: 85%; background-color: var(--el-fill-color-light); border-radius: 6px; }
 .preview-container :deep(pre) { padding: 16px; overflow: auto; font-size: 85%; line-height: 1.45; background-color: var(--el-fill-color-light); border-radius: 6px; margin-bottom: 16px; }
 .preview-container :deep(pre code) { background-color: transparent; padding: 0; }
+.preview-container :deep(pre code.hljs) { background-color: transparent; padding: 0; color: var(--el-text-color-primary); }
+.preview-container :deep(.hljs-keyword) { color: var(--hljs-keyword); }
+.preview-container :deep(.hljs-selector-tag) { color: var(--hljs-keyword); }
+.preview-container :deep(.hljs-built_in) { color: var(--hljs-built_in); }
+.preview-container :deep(.hljs-type) { color: var(--hljs-type); }
+.preview-container :deep(.hljs-literal) { color: var(--hljs-literal); }
+.preview-container :deep(.hljs-number) { color: var(--hljs-number); }
+.preview-container :deep(.hljs-string) { color: var(--hljs-string); }
+.preview-container :deep(.hljs-regexp) { color: var(--hljs-string); }
+.preview-container :deep(.hljs-symbol) { color: var(--hljs-symbol); }
+.preview-container :deep(.hljs-variable) { color: var(--hljs-variable); }
+.preview-container :deep(.hljs-template-variable) { color: var(--hljs-variable); }
+.preview-container :deep(.hljs-function) { color: var(--hljs-function); }
+.preview-container :deep(.hljs-title) { color: var(--hljs-function); }
+.preview-container :deep(.hljs-title.class_) { color: var(--hljs-function); }
+.preview-container :deep(.hljs-params) { color: var(--hljs-params); }
+.preview-container :deep(.hljs-comment) { color: var(--hljs-comment); font-style: italic; }
+.preview-container :deep(.hljs-doctag) { color: var(--hljs-keyword); }
+.preview-container :deep(.hljs-meta) { color: var(--hljs-meta); }
+.preview-container :deep(.hljs-meta .hljs-keyword) { color: var(--hljs-meta); }
+.preview-container :deep(.hljs-attr) { color: var(--hljs-attr); }
+.preview-container :deep(.hljs-attribute) { color: var(--hljs-string); }
+.preview-container :deep(.hljs-name) { color: var(--hljs-attr); }
+.preview-container :deep(.hljs-tag) { color: var(--hljs-keyword); }
+.preview-container :deep(.hljs-section) { color: var(--hljs-section); font-weight: bold; }
+.preview-container :deep(.hljs-addition) { color: var(--hljs-addition); background-color: var(--hljs-addition-bg); }
+.preview-container :deep(.hljs-deletion) { color: var(--hljs-deletion); background-color: var(--hljs-deletion-bg); }
+.preview-container :deep(.hljs-selector-class) { color: var(--hljs-selector-class); }
+.preview-container :deep(.hljs-selector-id) { color: var(--hljs-selector-id); }
 .preview-container :deep(ul), .preview-container :deep(ol) { padding-left: 2em; margin-bottom: 16px; }
 .preview-container :deep(li) { margin-bottom: 4px; }
 .preview-container :deep(blockquote) { padding: 0 1em; color: var(--el-text-color-secondary); border-left: .25em solid var(--el-border-color); margin-bottom: 16px; }
@@ -2287,4 +2373,51 @@ onUnmounted(() => {
 .search-match-line { flex-shrink: 0; color: var(--el-text-color-placeholder); font-family: monospace; }
 .search-match-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-empty { text-align: center; color: var(--el-text-color-secondary); padding: 20px; font-size: 14px; }
+</style>
+
+<style>
+:root {
+  --hljs-keyword: #a626a4;
+  --hljs-built_in: #c18401;
+  --hljs-type: #c18401;
+  --hljs-literal: #0184bc;
+  --hljs-number: #986801;
+  --hljs-string: #50a14f;
+  --hljs-symbol: #e45649;
+  --hljs-variable: #e45649;
+  --hljs-function: #4078f2;
+  --hljs-params: #383a42;
+  --hljs-comment: #a0a1a7;
+  --hljs-meta: #4078f2;
+  --hljs-attr: #986801;
+  --hljs-section: #4078f2;
+  --hljs-addition: #50a14f;
+  --hljs-addition-bg: rgba(80, 161, 79, 0.1);
+  --hljs-deletion: #e45649;
+  --hljs-deletion-bg: rgba(228, 86, 73, 0.1);
+  --hljs-selector-class: #986801;
+  --hljs-selector-id: #4078f2;
+}
+:root.dark {
+  --hljs-keyword: #c678dd;
+  --hljs-built_in: #e6c07b;
+  --hljs-type: #d19a66;
+  --hljs-literal: #56b6c2;
+  --hljs-number: #d19a66;
+  --hljs-string: #98c379;
+  --hljs-symbol: #56b6c2;
+  --hljs-variable: #e06c75;
+  --hljs-function: #61afef;
+  --hljs-params: #abb2bf;
+  --hljs-comment: #5c6370;
+  --hljs-meta: #61afef;
+  --hljs-attr: #d19a66;
+  --hljs-section: #61afef;
+  --hljs-addition: #98c379;
+  --hljs-addition-bg: rgba(152, 195, 121, 0.15);
+  --hljs-deletion: #e06c75;
+  --hljs-deletion-bg: rgba(224, 108, 117, 0.15);
+  --hljs-selector-class: #d19a66;
+  --hljs-selector-id: #61afef;
+}
 </style>

@@ -129,24 +129,18 @@ fn is_share_expired(share: &ShareInfo) -> bool {
     false
 }
 
-fn check_share_access(share: &ShareInfo, check_count: bool) -> Option<HttpResponse> {
+fn check_share_access(share: &ShareInfo, check_count: bool) -> Option<String> {
     if share.expire_type == "time" {
         if let Some(ref expire_at) = share.expire_at {
             if is_time_expired(expire_at) {
-                return Some(HttpResponse::Ok().json(ApiResponse {
-                    success: false,
-                    fail_code: Some("SHARE_EXPIRED".to_string()),
-                }));
+                return Some("SHARE_EXPIRED".to_string());
             }
         }
     }
     if check_count && share.expire_type == "count" {
         if let Some(max) = share.max_downloads {
             if share.download_count >= max {
-                return Some(HttpResponse::Ok().json(ApiResponse {
-                    success: false,
-                    fail_code: Some("SHARE_OVER_LIMIT".to_string()),
-                }));
+                return Some("SHARE_OVER_LIMIT".to_string());
             }
         }
     }
@@ -219,8 +213,11 @@ pub async fn get_share_download_token(
         Err(e) => return internal_error_response("/api/share/get_download_token", &e),
     };
 
-    if let Some(resp) = check_share_access(&share, true) {
-        return resp;
+    if let Some(fail_code) = check_share_access(&share, true) {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some(fail_code),
+        });
     }
 
     let user_root = match app_state.user_model.get_user_full(&share.user_id) {
@@ -316,8 +313,11 @@ pub async fn get_share_info(
         Err(e) => return internal_error_response("/api/share/info", &e),
     };
 
-    if let Some(resp) = check_share_access(&share, true) {
-        return resp;
+    if let Some(fail_code) = check_share_access(&share, true) {
+        return HttpResponse::Ok().json(ApiResponse {
+            success: false,
+            fail_code: Some(fail_code),
+        });
     }
 
     let need_password = share.password.is_some();
@@ -379,35 +379,38 @@ pub async fn download_share_file(
     let share = match app_state.share_model.get_by_code(&code) {
         Ok(Some(s)) => s,
         Ok(None) => {
-            return HttpResponse::Ok().json(ApiResponse {
+            return HttpResponse::NotFound().json(ApiResponse {
                 success: false,
                 fail_code: Some("SHARE_NOT_FOUND".to_string()),
             });
         }
         Err(e) => {
             crate::error_logger::log_error("/api/share/file", &e);
-            return HttpResponse::Ok().json(ApiResponse {
+            return HttpResponse::InternalServerError().json(ApiResponse {
                 success: false,
                 fail_code: Some("INTERNAL_ERROR".to_string()),
             });
         }
     };
 
-    if let Some(resp) = check_share_access(&share, true) {
-        return resp;
+    if let Some(fail_code) = check_share_access(&share, true) {
+        return HttpResponse::Forbidden().json(ApiResponse {
+            success: false,
+            fail_code: Some(fail_code),
+        });
     }
     if share.share_mode == "page" || share.password.is_some() {
         match query.token.as_deref() {
             Some(token) => {
                 if !validate_share_token(&app_state, &share.share_code, token) {
-                    return HttpResponse::Ok().json(ApiResponse {
+                    return HttpResponse::Forbidden().json(ApiResponse {
                         success: false,
                         fail_code: Some("SHARE_DOWNLOAD_DENIED".to_string()),
                     });
                 }
             }
             None => {
-                return HttpResponse::Ok().json(ApiResponse {
+                return HttpResponse::Forbidden().json(ApiResponse {
                     success: false,
                     fail_code: Some("SHARE_DOWNLOAD_DENIED".to_string()),
                 });
@@ -418,14 +421,14 @@ pub async fn download_share_file(
     let user_root = match app_state.user_model.get_user_full(&share.user_id) {
         Ok(Some(u)) => u.root_path.unwrap_or_default(),
         Ok(None) => {
-            return HttpResponse::Ok().json(ApiResponse {
+            return HttpResponse::NotFound().json(ApiResponse {
                 success: false,
                 fail_code: Some("SHARE_FILE_MISSING".to_string()),
             });
         }
         Err(e) => {
             crate::error_logger::log_error("/api/share/file", &e);
-            return HttpResponse::Ok().json(ApiResponse {
+            return HttpResponse::InternalServerError().json(ApiResponse {
                 success: false,
                 fail_code: Some("INTERNAL_ERROR".to_string()),
             });
@@ -435,7 +438,7 @@ pub async fn download_share_file(
     let file_full_path = Path::new(&user_root).join(&share.file_path);
 
     if !file_full_path.exists() {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::NotFound().json(ApiResponse {
             success: false,
             fail_code: Some("SHARE_FILE_MISSING".to_string()),
         });
@@ -445,14 +448,14 @@ pub async fn download_share_file(
         match app_state.share_model.increment_download_count(&code) {
             Ok(true) => {}
             Ok(false) => {
-                return HttpResponse::Ok().json(ApiResponse {
+                return HttpResponse::Forbidden().json(ApiResponse {
                     success: false,
                     fail_code: Some("SHARE_OVER_LIMIT".to_string()),
                 });
             }
             Err(e) => {
                 crate::error_logger::log_error("/api/share/file", &e);
-                return HttpResponse::Ok().json(ApiResponse {
+                return HttpResponse::InternalServerError().json(ApiResponse {
                     success: false,
                     fail_code: Some("INTERNAL_ERROR".to_string()),
                 });
@@ -490,14 +493,14 @@ pub async fn download_share_file(
         match app_state.share_model.increment_download_count(&code) {
             Ok(true) => {}
             Ok(false) => {
-                return HttpResponse::Ok().json(ApiResponse {
+                return HttpResponse::Forbidden().json(ApiResponse {
                     success: false,
                     fail_code: Some("SHARE_OVER_LIMIT".to_string()),
                 });
             }
             Err(e) => {
                 crate::error_logger::log_error("/api/share/file", &e);
-                return HttpResponse::Ok().json(ApiResponse {
+                return HttpResponse::InternalServerError().json(ApiResponse {
                     success: false,
                     fail_code: Some("INTERNAL_ERROR".to_string()),
                 });

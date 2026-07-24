@@ -13,3 +13,4 @@ test/test_workdir/
 output/
 *.pyc
 .vscode
+.workbuddy/

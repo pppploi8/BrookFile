@@ -36,7 +36,6 @@ impl Database {
                 id TEXT PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                password_salt TEXT NOT NULL,
                 root_path TEXT,
                 recycle_bin_path TEXT,
                 is_admin INTEGER DEFAULT 0,
@@ -258,10 +257,30 @@ impl Database {
             [],
         )?;
 
+        self.migrate(&conn)?;
+
         conn.execute(
             "INSERT OR IGNORE INTO system_config (key, value) VALUES ('system_name', 'BrookFile')",
             [],
         )?;
+
+        Ok(())
+    }
+
+    fn migrate(&self, conn: &r2d2::PooledConnection<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
+        let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+
+        if version < 2 {
+            let has_password_salt: bool = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'password_salt'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )? > 0;
+            if has_password_salt {
+                conn.execute("ALTER TABLE users DROP COLUMN password_salt", [])?;
+            }
+            conn.execute("PRAGMA user_version = 2", [])?;
+        }
 
         Ok(())
     }

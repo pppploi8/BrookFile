@@ -344,19 +344,24 @@ pub async fn download_file(
 ) -> impl Responder {
     let root_path = match get_user_root_path(&http_req, &app_state) {
         Ok(path) => path,
-        Err(resp) => return resp,
+        Err(_) => {
+            return HttpResponse::Unauthorized().json(ApiResponse {
+                success: false,
+                fail_code: Some("NOT_LOGGED_IN".to_string()),
+            })
+        }
     };
     let root_path_obj = Path::new(&root_path);
 
     if body.path.is_empty() {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::BadRequest().json(ApiResponse {
             success: false,
             fail_code: Some("INVALID_FILE_PATH".to_string()),
         });
     }
 
     if !is_safe_path(&body.path) {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::BadRequest().json(ApiResponse {
             success: false,
             fail_code: Some("INVALID_FILE_PATH".to_string()),
         });
@@ -365,21 +370,21 @@ pub async fn download_file(
     let target_path = root_path_obj.join(&body.path);
 
     if !target_path.exists() {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::NotFound().json(ApiResponse {
             success: false,
             fail_code: Some("PATH_NOT_FOUND".to_string()),
         });
     }
 
     if !is_path_under_root(&target_path, root_path_obj) {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::NotFound().json(ApiResponse {
             success: false,
             fail_code: Some("PATH_NOT_FOUND".to_string()),
         });
     }
 
     if !target_path.is_file() {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::BadRequest().json(ApiResponse {
             success: false,
             fail_code: Some("NOT_A_FILE".to_string()),
         });
@@ -387,7 +392,7 @@ pub async fn download_file(
 
     match NamedFile::open(&target_path) {
         Ok(file) => file.into_response(&http_req),
-        Err(_) => HttpResponse::Ok().json(ApiResponse {
+        Err(_) => HttpResponse::InternalServerError().json(ApiResponse {
             success: false,
             fail_code: Some("FILE_READ_ERROR".to_string()),
         }),

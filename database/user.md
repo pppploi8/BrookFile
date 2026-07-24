@@ -7,7 +7,6 @@
 | id | TEXT | PRIMARY KEY | 用户ID，UUID格式 |
 | username | TEXT | UNIQUE NOT NULL | 用户名，唯一且非空 |
 | password_hash | TEXT | NOT NULL | 密码哈希值，非空 |
-| password_salt | TEXT | NOT NULL | 密码盐值，非空 |
 | root_path | TEXT | NULL | 用户根路径 |
 | is_admin | INTEGER | DEFAULT 0 | 是否为管理员（0否/1是） |
 | expire_at | TIMESTAMP | NULL | 到期时间，null表示永久有效 |

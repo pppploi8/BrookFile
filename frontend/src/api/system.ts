@@ -267,13 +267,12 @@ export async function fetchDownloadFile(path: string, signal?: AbortSignal): Pro
     credentials: 'include',
     signal,
   })
-  const contentType = response.headers.get('Content-Type') || ''
-  if (contentType.includes('application/json')) {
-    const data = await response.json()
-    if (data.fail_code === 'NOT_LOGGED_IN') {
+  if (!response.ok) {
+    const data = await response.json().catch(() => null)
+    if (data?.fail_code === 'NOT_LOGGED_IN') {
       handleNotLoggedIn()
     }
-    throw new Error(data.fail_code || 'Download failed')
+    throw new Error(data?.fail_code || 'Download failed')
   }
   return response
 }
@@ -360,13 +359,12 @@ export async function fetchDownloadFolder(path: string, signal?: AbortSignal): P
     credentials: 'include',
     signal,
   })
-  const contentType = response.headers.get('Content-Type') || ''
-  if (contentType.includes('application/json')) {
-    const data = await response.json()
-    if (data.fail_code === 'NOT_LOGGED_IN') {
+  if (!response.ok) {
+    const data = await response.json().catch(() => null)
+    if (data?.fail_code === 'NOT_LOGGED_IN') {
       handleNotLoggedIn()
     }
-    throw new Error(data.fail_code || 'Download failed')
+    throw new Error(data?.fail_code || 'Download failed')
   }
   return response
 }

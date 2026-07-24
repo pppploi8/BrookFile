@@ -147,11 +147,9 @@
 
 **返回值**：
 
-**成功响应**：文件流（Content-Disposition: attachment）
+**成功响应**（HTTP 200）：文件流（Content-Disposition: attachment）
 
-**失败响应**：
-
-对于分享验证类错误，返回 JSON，包含具体的失败原因：
+**失败响应**：该接口使用 HTTP 状态码表达错误（不遵循统一 200 规范），body 仍为 JSON 格式：
 ```json
 {
   "success": false,
@@ -159,17 +157,15 @@
 }
 ```
 
-对于文件读取/压缩失败等内部错误（验证通过后实际提供文件时出错），返回 HTTP 404 或 HTTP 500，不返回 JSON。这是因为浏览器/下载工具在文件下载请求中收到 JSON 会将其当作文件内容下载，无法正确展示错误信息。
-
 **错误编码说明**：
-| 错误编码 | 说明 |
-|---------|------|
-| `SHARE_NOT_FOUND` | 分享不存在 |
-| `SHARE_EXPIRED` | 分享已过期 |
-| `SHARE_FILE_MISSING` | 分享的文件已被删除 |
-| `SHARE_OVER_LIMIT` | 下载次数已达上限 |
-| `SHARE_DOWNLOAD_DENIED` | page 模式下未提供有效 token |
-| `INTERNAL_ERROR` | 内部错误 |
+| HTTP 状态码 | 错误编码 | 说明 |
+|------------|---------|------|
+| 404 | `SHARE_NOT_FOUND` | 分享不存在 |
+| 403 | `SHARE_EXPIRED` | 分享已过期 |
+| 403 | `SHARE_OVER_LIMIT` | 下载次数已达上限 |
+| 403 | `SHARE_DOWNLOAD_DENIED` | page 模式下未提供有效 token |
+| 404 | `SHARE_FILE_MISSING` | 分享的文件已被删除 |
+| 500 | `INTERNAL_ERROR` | 内部错误 |
 
 **处理流程**：
 1. 根据 share_code 查询分享记录

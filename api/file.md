@@ -84,9 +84,9 @@
 
 **返回值**：
 
-**成功响应**：返回文件内容，使用流式传输，不将整个文件载入内存。
+**成功响应**（HTTP 200）：返回文件内容，使用流式传输，不将整个文件载入内存。
 
-**失败响应**：
+**失败响应**：该接口使用 HTTP 状态码表达错误（不遵循统一 200 规范），body 仍为 JSON 格式：
 ```json
 {
   "success": false,
@@ -95,13 +95,13 @@
 ```
 
 **错误编码说明**：
-| 错误编码 | 说明 |
-|---------|------|
-| `NOT_LOGGED_IN` | 用户未登录 |
-| `PATH_NOT_FOUND` | 文件不存在 |
-| `NOT_A_FILE` | 路径不是文件 |
-| `FILE_READ_ERROR` | 文件读取失败 |
-| `INVALID_FILE_PATH` | 文件路径无效（包含路径穿越等） |
+| HTTP 状态码 | 错误编码 | 说明 |
+|------------|---------|------|
+| 401 | `NOT_LOGGED_IN` | 用户未登录 |
+| 400 | `INVALID_FILE_PATH` | 文件路径无效（包含路径穿越等） |
+| 404 | `PATH_NOT_FOUND` | 文件不存在 |
+| 400 | `NOT_A_FILE` | 路径不是文件 |
+| 500 | `FILE_READ_ERROR` | 文件读取失败 |
 
 ## 3. 创建文件夹接口
 
@@ -510,9 +510,9 @@
 
 **返回值**：
 
-**成功响应**：返回ZIP文件流，Content-Type: application/zip，Content-Disposition: attachment; filename="{folder_name}.zip"
+**成功响应**（HTTP 200）：返回ZIP文件流，Content-Type: application/zip，Content-Disposition: attachment; filename="{folder_name}.zip"
 
-**失败响应**：
+**失败响应**：该接口使用 HTTP 状态码表达错误（不遵循统一 200 规范），body 仍为 JSON 格式：
 ```json
 {
   "success": false,
@@ -521,12 +521,12 @@
 ```
 
 **错误编码说明**：
-| 错误编码 | 说明 |
-|---------|------|
-| `NOT_LOGGED_IN` | 用户未登录 |
-| `PATH_NOT_FOUND` | 文件夹不存在 |
-| `NOT_A_DIRECTORY` | 路径不是文件夹 |
-| `INVALID_FILE_PATH` | 文件路径无效（空路径或包含路径穿越）
+| HTTP 状态码 | 错误编码 | 说明 |
+|------------|---------|------|
+| 401 | `NOT_LOGGED_IN` | 用户未登录 |
+| 400 | `INVALID_FILE_PATH` | 文件路径无效（空路径或包含路径穿越） |
+| 404 | `PATH_NOT_FOUND` | 文件夹不存在 |
+| 400 | `NOT_A_DIRECTORY` | 路径不是文件夹 |
 
 ## 12. 文件重命名接口
 

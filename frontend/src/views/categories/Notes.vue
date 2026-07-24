@@ -294,6 +294,7 @@
     </div>
 
     <!-- Context Menu -->
+    <div v-if="contextMenu.visible" class="context-menu-overlay" @click="hideContextMenu" @contextmenu.prevent="hideContextMenu"></div>
     <div
       v-if="contextMenu.visible"
       class="context-menu"
@@ -2239,9 +2240,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.notes-container { height: 100%; display: flex; flex: 1; min-height: 0; flex-direction: row; }
+.notes-container { height: 100%; display: flex; flex: 1; min-height: 0; flex-direction: row; overflow: hidden; }
 .mobile-view { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; }
-.desktop-view { display: flex; flex: 1; min-height: 0; }
+.desktop-view { display: flex; flex: 1; min-height: 0; min-width: 0; }
 .notebook-panel { width: 260px; flex-shrink: 0; border-right: 1px solid var(--el-border-color-lighter); display: flex; flex-direction: column; overflow: hidden; }
 .tree-search { padding: 12px; flex-shrink: 0; display: flex; gap: 8px; }
 .tree-scroll { flex: 1; min-height: 0; overflow: auto; background-color: var(--el-bg-color); }
@@ -2254,6 +2255,7 @@ onUnmounted(() => {
 .tree-node-note { color: var(--el-color-success); }
 .note-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .note-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--el-text-color-secondary); gap: 12px; }
+.context-menu-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1999; }
 .context-menu { position: fixed; z-index: 2000; background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light); border-radius: 4px; padding: 4px 0; box-shadow: var(--el-box-shadow-light); }
 .context-menu-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; cursor: pointer; font-size: 14px; color: var(--el-text-color-regular); white-space: nowrap; }
 .context-menu-item:hover { background: var(--el-fill-color-light); color: var(--el-color-primary); }
@@ -2296,7 +2298,7 @@ onUnmounted(() => {
 .save-status { font-size: 12px; color: var(--el-text-color-secondary); }
 .save-status.unsaved { color: var(--el-text-color-secondary); }
 .editor-wrapper { flex: 1; display: flex; min-height: 0; overflow: hidden; }
-.editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--el-border-color-lighter); }
+.editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-right: 1px solid var(--el-border-color-lighter); }
 .editor-toolbar { display: flex; align-items: center; gap: 2px; padding: 6px 10px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); flex-shrink: 0; }
 .toolbar-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 4px; cursor: pointer; color: var(--el-text-color-regular); transition: all 0.2s; }
 .toolbar-btn:hover { background: var(--el-fill-color); color: var(--el-color-primary); }

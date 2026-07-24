@@ -115,41 +115,46 @@ pub async fn download_folder(
 ) -> impl Responder {
     let root_path = match get_user_root_path(&http_req, &app_state) {
         Ok(path) => path,
-        Err(resp) => return resp,
+        Err(_) => {
+            return HttpResponse::Unauthorized().json(ApiResponse {
+                success: false,
+                fail_code: Some("NOT_LOGGED_IN".to_string()),
+            })
+        }
     };
     let root_path_obj = Path::new(&root_path);
     let target_path = root_path_obj.join(&body.path);
 
     if body.path.is_empty() {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::BadRequest().json(ApiResponse {
             success: false,
             fail_code: Some("INVALID_FILE_PATH".to_string()),
         });
     }
 
     if !is_safe_path(&body.path) {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::BadRequest().json(ApiResponse {
             success: false,
             fail_code: Some("INVALID_FILE_PATH".to_string()),
         });
     }
 
     if !target_path.exists() {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::NotFound().json(ApiResponse {
             success: false,
             fail_code: Some("PATH_NOT_FOUND".to_string()),
         });
     }
 
     if !is_path_under_root(&target_path, root_path_obj) {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::NotFound().json(ApiResponse {
             success: false,
             fail_code: Some("PATH_NOT_FOUND".to_string()),
         });
     }
 
     if !target_path.is_dir() {
-        return HttpResponse::Ok().json(ApiResponse {
+        return HttpResponse::BadRequest().json(ApiResponse {
             success: false,
             fail_code: Some("NOT_A_DIRECTORY".to_string()),
         });

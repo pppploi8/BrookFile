@@ -83,7 +83,7 @@ server {
 | `argon2.t_cost` | integer | `2` | Argon2 iterations, affects password hashing computation time |
 | `argon2.p_cost` | integer | `1` | Argon2 parallelism, affects thread count for password hashing |
 
-> **Note**: The `argon2` parameters affect the hash strength of user login passwords and backup encryption passwords. After modifying these parameters, existing passwords will no longer validate — you'll need to delete `database.db` and reinitialize the system. On low-performance devices (e.g., routers), you can reduce `m_cost` (e.g., `4096`) and `t_cost` (e.g., `1`) to decrease memory usage and login time, but this will reduce resistance to brute-force attacks.
+> **Note**: The `argon2` parameters affect the hash strength of user login passwords and backup encryption passwords. Changes only apply to login passwords set and encrypted backups created after the modification; existing login passwords have their hash parameters embedded in the hash value, and existing backups record their KDF parameters in the backup's `.info` file — verification and restoration each read their own stored parameters, so after changing the config you can still log in and restore old backups normally, with no need to delete `database.db`. On low-performance devices (e.g., routers), you can reduce `m_cost` (e.g., `4096`) and `t_cost` (e.g., `1`) to decrease memory usage and login time, but this will reduce resistance to brute-force attacks.
 
 ### System Settings
 
@@ -98,8 +98,6 @@ After logging in as admin, the "Settings" menu allows online configuration of:
 | Rebuild Notebook Index | Immediately | Manually trigger fulltext index rebuild for all non-encrypted notebooks |
 
 ## Development
-
-This project is fully developed by AI (GLM-5/5.1).
 
 ### Tech Stack
 

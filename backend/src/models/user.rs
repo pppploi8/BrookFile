@@ -45,8 +45,8 @@ impl UserModel {
         let user_id = Uuid::new_v4().to_string();
 
         conn.execute(
-            "INSERT INTO users (id, username, password_hash, password_salt, root_path, recycle_bin_path, is_admin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![user_id, username, password_hash, "", root_path, recycle_bin_path, is_admin_int],
+            "INSERT INTO users (id, username, password_hash, root_path, recycle_bin_path, is_admin) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![user_id, username, password_hash, root_path, recycle_bin_path, is_admin_int],
         ).map_err(|e| e.to_string())?;
 
         Ok(())
@@ -69,8 +69,8 @@ impl UserModel {
         let user_id = Uuid::new_v4().to_string();
 
         conn.execute(
-            "INSERT INTO users (id, username, password_hash, password_salt, root_path, recycle_bin_path, is_admin, expire_at, remark) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![user_id, username, password_hash, "", root_path, recycle_bin_path, is_admin_int, expire_at, remark],
+            "INSERT INTO users (id, username, password_hash, root_path, recycle_bin_path, is_admin, expire_at, remark) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![user_id, username, password_hash, root_path, recycle_bin_path, is_admin_int, expire_at, remark],
         ).map_err(|e| e.to_string())?;
 
         Ok(())
@@ -228,8 +228,8 @@ impl UserModel {
                 let password_hash = self.hash_password(pwd)?;
 
                 tx.execute(
-                    "UPDATE users SET password_hash = ?1, password_salt = ?2, updated_at = datetime('now') WHERE id = ?3",
-                    params![password_hash, "", user_id],
+                    "UPDATE users SET password_hash = ?1, updated_at = datetime('now') WHERE id = ?2",
+                    params![password_hash, user_id],
                 ).map_err(|e| e.to_string())?;
             }
         }
@@ -415,8 +415,8 @@ impl UserModel {
         let password_hash = self.hash_password(new_password)?;
 
         conn.execute(
-            "UPDATE users SET password_hash = ?1, password_salt = ?2, updated_at = datetime('now') WHERE id = ?3",
-            params![password_hash, "", user_id],
+            "UPDATE users SET password_hash = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![password_hash, user_id],
         ).map_err(|e| e.to_string())?;
 
         session_manager.invalidate_user_sessions(user_id);

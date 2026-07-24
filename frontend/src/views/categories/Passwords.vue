@@ -169,6 +169,7 @@
     </template>
 
     <!-- Context Menu -->
+    <div v-if="contextMenu.visible" class="context-menu-overlay" @click="hideContextMenu" @contextmenu.prevent="hideContextMenu"></div>
     <div
       v-if="contextMenu.visible"
       class="context-menu"
@@ -1608,6 +1609,15 @@ onUnmounted(() => {
   justify-content: center;
   color: var(--el-text-color-secondary);
   gap: 12px;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1999;
 }
 
 .context-menu {

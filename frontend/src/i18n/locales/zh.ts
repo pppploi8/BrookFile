@@ -183,6 +183,13 @@ export default
     webdavPermissionReadOnlyDesc: '浏览/下载',
     webdavGlobalAccess: '全局路径',
     webdavGlobalAccessTip: '启用后使用根路径，不可再添加其他WebDAV配置',
+    webdavCorsConfig: '跨域配置',
+    webdavCorsTitle: '跨域访问配置',
+    webdavCorsTip: '配置允许跨域访问 WebDAV 的域名白名单。仅影响浏览器的跨域请求，实际访问仍需提供正确的 WebDAV 账号密码。域名格式为 http(s)://主机[:端口]，不含路径。',
+    webdavCorsPlaceholder: '例如 https://example.com',
+    webdavCorsEmpty: '暂无配置的域名',
+    webdavCorsInvalid: '域名格式无效，应为 http(s)://主机[:端口]',
+    webdavCorsSaveSuccess: '跨域配置保存成功',
     dayN: '第{n}天',
   },
   errors: {

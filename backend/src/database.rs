@@ -2,6 +2,8 @@ use r2d2_sqlite::SqliteConnectionManager;
 
 pub type Pool = r2d2::Pool<SqliteConnectionManager>;
 
+const SCHEMA_VERSION: i32 = 3;
+
 pub struct Database {
     pub pool: Pool,
 }
@@ -23,6 +25,21 @@ impl Database {
     fn init_tables(&self) -> Result<(), Box<dyn std::error::Error>> {
         let conn = self.pool.get()?;
 
+        let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+
+        if version == 0 {
+            Self::create_all_tables(&conn)?;
+            Self::legacy_fixups(&conn)?;
+            conn.execute(&format!("PRAGMA user_version = {}", SCHEMA_VERSION), [])?;
+        } else if version < SCHEMA_VERSION {
+            Self::migrate_incremental(&conn, version)?;
+            conn.execute(&format!("PRAGMA user_version = {}", SCHEMA_VERSION), [])?;
+        }
+
+        Ok(())
+    }
+
+    fn create_all_tables(conn: &r2d2::PooledConnection<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS system_config (
                 key TEXT PRIMARY KEY,
@@ -217,25 +234,7 @@ impl Database {
             [],
         )?;
 
-        let _ = conn.execute(
-            "ALTER TABLE webdav_configs ADD COLUMN global_access INTEGER NOT NULL DEFAULT 0",
-            [],
-        );
-
-        let _ = conn.execute(
-            "ALTER TABLE upload_cache ADD COLUMN user_id TEXT NOT NULL DEFAULT ''",
-            [],
-        );
-
-        let _ = conn.execute(
-            "ALTER TABLE webdav_configs ADD COLUMN digest_ha1 TEXT",
-            [],
-        );
-
-        let _ = conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_cache_user_path ON upload_cache(user_id, file_path)",
-            [],
-        );
+        Self::create_webdav_cors_table(conn)?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS sessions (
@@ -257,8 +256,6 @@ impl Database {
             [],
         )?;
 
-        self.migrate(&conn)?;
-
         conn.execute(
             "INSERT OR IGNORE INTO system_config (key, value) VALUES ('system_name', 'BrookFile')",
             [],
@@ -267,19 +264,68 @@ impl Database {
         Ok(())
     }
 
-    fn migrate(&self, conn: &r2d2::PooledConnection<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
-        let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    fn legacy_fixups(conn: &r2d2::PooledConnection<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
+        let _ = conn.execute(
+            "ALTER TABLE webdav_configs ADD COLUMN global_access INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
 
-        if version < 2 {
-            let has_password_salt: bool = conn.query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'password_salt'",
-                [],
-                |row| row.get::<_, i32>(0),
-            )? > 0;
-            if has_password_salt {
-                conn.execute("ALTER TABLE users DROP COLUMN password_salt", [])?;
-            }
-            conn.execute("PRAGMA user_version = 2", [])?;
+        let _ = conn.execute(
+            "ALTER TABLE upload_cache ADD COLUMN user_id TEXT NOT NULL DEFAULT ''",
+            [],
+        );
+
+        let _ = conn.execute(
+            "ALTER TABLE webdav_configs ADD COLUMN digest_ha1 TEXT",
+            [],
+        );
+
+        let _ = conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_cache_user_path ON upload_cache(user_id, file_path)",
+            [],
+        );
+
+        Self::drop_password_salt_if_exists(conn)?;
+
+        Ok(())
+    }
+
+    fn migrate_incremental(conn: &r2d2::PooledConnection<SqliteConnectionManager>, from: i32) -> Result<(), Box<dyn std::error::Error>> {
+        if from < 2 {
+            Self::drop_password_salt_if_exists(conn)?;
+        }
+        if from < 3 {
+            Self::create_webdav_cors_table(conn)?;
+        }
+
+        Ok(())
+    }
+
+    fn create_webdav_cors_table(conn: &r2d2::PooledConnection<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS webdav_cors (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id),
+                origin TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_webdav_cors_user_origin ON webdav_cors(user_id, origin)",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn drop_password_salt_if_exists(conn: &r2d2::PooledConnection<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
+        let has_password_salt: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'password_salt'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )? > 0;
+        if has_password_salt {
+            conn.execute("ALTER TABLE users DROP COLUMN password_salt", [])?;
         }
 
         Ok(())

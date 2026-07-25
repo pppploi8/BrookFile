@@ -341,6 +341,12 @@ pub async fn delete_user(
                 }
             }
 
+            if let Ok(all) = app_state.webdav_cors_model.all_origins() {
+                if let Ok(mut cache) = app_state.cors_origins.write() {
+                    *cache = all;
+                }
+            }
+
             HttpResponse::Ok().json(ApiResponse {
                 success: true,
                 fail_code: None,

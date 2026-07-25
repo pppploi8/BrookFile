@@ -1,8 +1,41 @@
 use crate::app_state::AppState;
 use crate::handlers;
+use actix_cors::Cors;
+use actix_web::http::header;
 use actix_web::web;
 
 pub fn configure(app: &mut web::ServiceConfig, app_state: web::Data<AppState>) {
+    let cors_cache = app_state.cors_origins.clone();
+    let dav_cors = Cors::default()
+        .allowed_origin_fn(move |origin, _req| {
+            origin
+                .to_str()
+                .map(|o| cors_cache.read().map(|set| set.contains(o)).unwrap_or(false))
+                .unwrap_or(false)
+        })
+        .allowed_methods(vec![
+            "OPTIONS", "HEAD", "PROPFIND", "GET", "PUT", "MKCOL", "COPY", "MOVE", "DELETE",
+        ])
+        .allowed_headers(vec![
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::HeaderName::from_static("depth"),
+            header::HeaderName::from_static("destination"),
+            header::HeaderName::from_static("overwrite"),
+            header::HeaderName::from_static("if"),
+            header::HeaderName::from_static("timeout"),
+            header::HeaderName::from_static("lock-token"),
+        ])
+        .expose_headers(vec![
+            header::HeaderName::from_static("dav"),
+            header::HeaderName::from_static("allow"),
+            header::CONTENT_LENGTH,
+            header::ETAG,
+            header::LAST_MODIFIED,
+            header::WWW_AUTHENTICATE,
+        ])
+        .max_age(3600);
+
     app.app_data(app_state.clone())
         .route(
             "/api/system/info",
@@ -282,8 +315,17 @@ pub fn configure(app: &mut web::ServiceConfig, app_state: web::Data<AppState>) {
             "/api/webdav/delete",
             web::post().to(handlers::delete_webdav_config),
         )
+        .route(
+            "/api/webdav/cors/list",
+            web::post().to(handlers::list_webdav_cors),
+        )
+        .route(
+            "/api/webdav/cors/save",
+            web::post().to(handlers::save_webdav_cors),
+        )
         .service(
             web::scope("/dav")
+                .wrap(dav_cors)
                 .route("", web::route().to(handlers::dav_handler))
                 .route("/{path:[^{}]*}", web::route().to(handlers::dav_handler)),
         )

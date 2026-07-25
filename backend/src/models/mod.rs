@@ -7,6 +7,7 @@ pub mod upload_cache;
 pub mod user;
 pub mod vault;
 pub mod webdav_config;
+pub mod webdav_cors;
 
 pub use backup_rule::*;
 pub use notebook::*;
@@ -17,3 +18,4 @@ pub use upload_cache::*;
 pub use user::*;
 pub use vault::*;
 pub use webdav_config::*;
+pub use webdav_cors::*;

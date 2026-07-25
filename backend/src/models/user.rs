@@ -340,6 +340,8 @@ impl UserModel {
             .map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM webdav_configs WHERE user_id = ?1", params![user_id])
             .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM webdav_cors WHERE user_id = ?1", params![user_id])
+            .map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM notebooks WHERE user_id = ?1", params![user_id])
             .map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM shares WHERE user_id = ?1", params![user_id])

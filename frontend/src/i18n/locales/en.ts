@@ -183,6 +183,13 @@ export default
     webdavPermissionReadOnlyDesc: 'Browse/Download',
     webdavGlobalAccess: 'Global Path',
     webdavGlobalAccessTip: 'Use root path, no other WebDAV configs allowed',
+    webdavCorsConfig: 'CORS Config',
+    webdavCorsTitle: 'CORS Access Config',
+    webdavCorsTip: 'Configure the domain whitelist allowed to access WebDAV cross-origin. This only affects browser cross-origin requests; actual access still requires valid WebDAV credentials. Origin format: http(s)://host[:port], no path.',
+    webdavCorsPlaceholder: 'e.g. https://example.com',
+    webdavCorsEmpty: 'No domains configured',
+    webdavCorsInvalid: 'Invalid origin format, expected http(s)://host[:port]',
+    webdavCorsSaveSuccess: 'CORS config saved',
     dayN: 'Day {n}',
   },
   errors: {

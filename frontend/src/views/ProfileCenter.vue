@@ -84,6 +84,10 @@
                 <el-icon><Plus /></el-icon>
                 {{ t('profile.webdavAddConfig') }}
               </el-button>
+              <el-button @click="handleOpenCors">
+                <el-icon><Link /></el-icon>
+                {{ t('profile.webdavCorsConfig') }}
+              </el-button>
             </div>
             <div class="backup-table-wrapper">
               <el-table :data="webdavList" class="backup-table" show-overflow-tooltip v-loading="loadingWebdavList">
@@ -385,6 +389,41 @@
         <el-button type="primary" @click="handleSaveWebDav">{{ t('common.submit') }}</el-button>
       </template>
     </el-drawer>
+
+    <el-drawer
+      v-model="corsDrawerVisible"
+      :title="t('profile.webdavCorsTitle')"
+      direction="rtl"
+      :size="isMobile ? '100%' : '450px'"
+      destroy-on-close
+    >
+      <div class="cors-tip">{{ t('profile.webdavCorsTip') }}</div>
+      <div class="cors-tags">
+        <el-tag
+          v-for="origin in corsOrigins"
+          :key="origin"
+          closable
+          class="cors-tag"
+          @close="handleRemoveCorsOrigin(origin)"
+        >
+          {{ origin }}
+        </el-tag>
+        <span v-if="corsOrigins.length === 0" class="cors-empty">{{ t('profile.webdavCorsEmpty') }}</span>
+      </div>
+      <div class="cors-input-row">
+        <el-input
+          v-model="corsInput"
+          :placeholder="t('profile.webdavCorsPlaceholder')"
+          @keyup.enter="handleAddCorsOrigin"
+        />
+        <el-button type="primary" @click="handleAddCorsOrigin">{{ t('common.add') }}</el-button>
+      </div>
+
+      <template #footer>
+        <el-button @click="corsDrawerVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="savingCors" @click="handleSaveCors">{{ t('common.submit') }}</el-button>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -393,12 +432,12 @@ import { ref, reactive, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from '@/utils/message'
 import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh, Edit, Document, Delete, EditPen, Key } from '@element-plus/icons-vue'
+import { Plus, Refresh, Edit, Document, Delete, EditPen, Key, Link } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import BackupLogDrawer from '@/components/BackupLogDrawer.vue'
 import RestoreDrawer from '@/components/RestoreDrawer.vue'
 import FolderSelect from '@/components/FolderSelect.vue'
-import { uploadAvatar, fetchAvatar, deleteAvatar, changePassword, listBackupRules, getBackupRule, createBackupRule, updateBackupRule, deleteBackupRule, updateFeatureOrder, listWebDavConfigs, createWebDavConfig, updateWebDavConfig, deleteWebDavConfig } from '@/api/system'
+import { uploadAvatar, fetchAvatar, deleteAvatar, changePassword, listBackupRules, getBackupRule, createBackupRule, updateBackupRule, deleteBackupRule, updateFeatureOrder, listWebDavConfigs, createWebDavConfig, updateWebDavConfig, deleteWebDavConfig, listWebDavCors, saveWebDavCors } from '@/api/system'
 import router from '@/router'
 
 const { t } = useI18n()
@@ -991,6 +1030,52 @@ const handleDeleteWebDav = async (row: WebDavItem) => {
   }
 }
 
+const corsDrawerVisible = ref(false)
+const corsOrigins = ref<string[]>([])
+const corsInput = ref('')
+const savingCors = ref(false)
+const corsOriginRegex = /^https?:\/\/[a-zA-Z0-9.-]+(:\d+)?$/
+
+const handleOpenCors = async () => {
+  corsDrawerVisible.value = true
+  corsInput.value = ''
+  try {
+    const res = await listWebDavCors()
+    corsOrigins.value = res.success ? res.origins : []
+  } catch {
+    corsOrigins.value = []
+  }
+}
+
+const handleAddCorsOrigin = () => {
+  const origin = corsInput.value.trim().replace(/\/+$/, '')
+  if (!origin) return
+  if (!corsOriginRegex.test(origin)) {
+    ElMessage.error({ __key: 'profile.webdavCorsInvalid' })
+    return
+  }
+  if (!corsOrigins.value.includes(origin)) {
+    corsOrigins.value.push(origin)
+  }
+  corsInput.value = ''
+}
+
+const handleRemoveCorsOrigin = (origin: string) => {
+  corsOrigins.value = corsOrigins.value.filter(o => o !== origin)
+}
+
+const handleSaveCors = async () => {
+  savingCors.value = true
+  try {
+    await saveWebDavCors(corsOrigins.value)
+    ElMessage.success({ __key: 'profile.webdavCorsSaveSuccess' })
+    corsDrawerVisible.value = false
+  } catch {
+  } finally {
+    savingCors.value = false
+  }
+}
+
 const loadAvatar = async () => {
   if (userStore.user?.id) {
     const blob = await fetchAvatar(userStore.user.id)
@@ -1294,5 +1379,34 @@ onUnmounted(() => {
   .profile-container .el-link .el-icon {
     margin-right: 0;
   }
+}
+
+.cors-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.cors-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+  min-height: 32px;
+}
+
+.cors-tag {
+  max-width: 100%;
+}
+
+.cors-empty {
+  font-size: 13px;
+  color: var(--el-text-color-placeholder);
+}
+
+.cors-input-row {
+  display: flex;
+  gap: 8px;
 }
 </style>

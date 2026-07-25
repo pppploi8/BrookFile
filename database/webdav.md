@@ -43,3 +43,26 @@
 - `digest_ha1` 在创建或更新密码时自动计算并存储，用于 Digest Auth 验证
 - 现有配置需重新设置密码才会生成 `digest_ha1`，否则 Digest Auth 不可用
 - 删除用户时自动清理该用户的所有 WebDAV 配置
+
+## WebDAV跨域白名单表 (webdav_cors)
+
+| 字段名 | 数据类型 | 约束 | 描述 |
+|-------|---------|------|------|
+| id | TEXT | PRIMARY KEY | 记录ID，UUID格式 |
+| user_id | TEXT | NOT NULL | 用户ID，关联 users.id |
+| origin | TEXT | NOT NULL | 允许跨域访问的域名，格式 http(s)://主机[:端口] |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+
+### 索引
+
+| 索引名 | 字段 | 说明 |
+|-------|------|------|
+| idx_webdav_cors_user_origin | user_id, origin (UNIQUE) | 同一用户不允许重复的域名 |
+
+### WebDAV跨域白名单表说明
+
+- 存储用户在个人中心配置的、允许跨域访问 WebDAV 的域名白名单，一人多条
+- 服务端对所有用户的白名单取并集判断 `/dav` 跨域请求的 `Origin` 是否放行（预检请求不携带认证信息，无法定位具体用户）
+- 白名单仅控制浏览器是否允许发起跨域请求，不绕过 WebDAV 认证，实际读写仍需提供正确的账号密码
+- 不带 `Origin` 头的原生 WebDAV 客户端不受白名单影响
+- 删除用户时自动清理该用户的所有白名单记录

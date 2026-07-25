@@ -1213,6 +1213,20 @@ export async function deleteWebDavConfig(id: string): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/webdav/delete', data: { id } })
 }
 
+export interface ListWebDavCorsResponse {
+  success: boolean
+  origins: string[]
+  fail_code?: string
+}
+
+export async function listWebDavCors(): Promise<ListWebDavCorsResponse> {
+  return request({ method: 'POST', url: '/webdav/cors/list', skipErrorMessage: true, rawResponse: true })
+}
+
+export async function saveWebDavCors(origins: string[]): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/webdav/cors/save', data: { origins } })
+}
+
 // ==================== 系统设置接口 ====================
 
 export interface SystemSettingsResponse {

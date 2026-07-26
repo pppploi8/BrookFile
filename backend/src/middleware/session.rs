@@ -1,5 +1,6 @@
 use actix_web::{dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform}, Error, HttpMessage};
 use actix_web::cookie::{Cookie, SameSite};
+use actix_web::cookie::time::Duration as CookieDuration;
 use std::future::{ready, Ready};
 use std::pin::Pin;
 use std::rc::Rc;
@@ -61,10 +62,11 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
+        let client_ip = crate::session_manager::extract_client_ip(req.headers(), req.peer_addr());
         let session_id = match req.cookie(&self.cookie_name) {
             Some(cookie) => {
                 let id = cookie.value().to_string();
-                if self.session_manager.validate_session(&id) {
+                if self.session_manager.validate_session(&id, &client_ip) {
                     id
                 } else {
                     self.session_manager.create_session()
@@ -87,12 +89,15 @@ where
             let mut res = service.call(req).await?;
 
             let regenerated = session_manager.take_regenerated(&session_id);
-            if needs_new_cookie || regenerated.is_some() {
+            let should_refresh = !needs_new_cookie && regenerated.is_none() && session_manager.should_refresh_cookie(&session_id);
+            if needs_new_cookie || regenerated.is_some() || should_refresh {
                 let final_session_id = regenerated.unwrap_or(session_id);
+                let timeout_days = session_manager.get_session_timeout_days();
                 let cookie = Cookie::build(&cookie_name, final_session_id)
                     .path("/")
                     .http_only(true)
                     .same_site(SameSite::Lax)
+                    .max_age(CookieDuration::seconds((timeout_days * 86400) as i64))
                     .finish();
                 if let Ok(value) = cookie.to_string().parse() {
                     res.headers_mut().append(

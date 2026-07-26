@@ -68,6 +68,7 @@ server {
 ```json
 {
     "port": 3000,
+    "trusted_proxy": false,
     "argon2": {
         "m_cost": 19456,
         "t_cost": 2,
@@ -79,6 +80,7 @@ server {
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `port` | integer | `3000` | Server listening port |
+| `trusted_proxy` | boolean | `false` | Whether to trust client IP headers (`X-Real-IP` / `X-Forwarded-For`) from a reverse proxy. Set to `true` when deployed behind Nginx or similar, otherwise the IP recorded for login devices will always be the proxy address |
 | `argon2.m_cost` | integer | `19456` | Argon2 memory cost (KB), affects memory usage for password hashing |
 | `argon2.t_cost` | integer | `2` | Argon2 iterations, affects password hashing computation time |
 | `argon2.p_cost` | integer | `1` | Argon2 parallelism, affects thread count for password hashing |

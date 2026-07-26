@@ -209,6 +209,45 @@
             </div>
           </div>
         </el-tab-pane>
+
+        <el-tab-pane :label="t('devices.title')" name="devices" style="height: 100%">
+          <div class="tab-content backup-content">
+            <div class="backup-table-wrapper">
+              <el-table :data="sessionList" class="backup-table" show-overflow-tooltip v-loading="loadingSessions">
+                <el-table-column :label="t('devices.device')" min-width="200">
+                  <template #default="{ row }">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ row.device_name || row.user_agent || '-' }}</span>
+                      <el-tag v-if="row.is_current" type="success" size="small" style="flex-shrink: 0;">{{ t('devices.current') }}</el-tag>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="ip_address" :label="t('devices.ip')" min-width="130" />
+                <el-table-column :label="t('devices.loginTime')" min-width="170">
+                  <template #default="{ row }">
+                    {{ formatTimestamp(row.created_at) }}
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('devices.lastAccess')" min-width="170">
+                  <template #default="{ row }">
+                    <template v-if="row.is_current">{{ t('devices.online') }}</template>
+                    <template v-else>{{ getLastAccessText(row.last_access_time) }}</template>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('profile.backupOperations')" :min-width="isMobile ? 80 : 150" fixed="right">
+                  <template #default="{ row }">
+                    <el-link type="primary" :icon="Edit" @click="handleEditDeviceName(row)">
+                      <span v-if="!isMobile">{{ t('devices.rename') }}</span>
+                    </el-link>
+                    <el-link v-if="!row.is_current" type="danger" :icon="Delete" @click="handleRevokeSession(row)">
+                      <span v-if="!isMobile">{{ t('devices.revoke') }}</span>
+                    </el-link>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </div>
 
@@ -437,7 +476,8 @@ import { useUserStore } from '@/stores/user'
 import BackupLogDrawer from '@/components/BackupLogDrawer.vue'
 import RestoreDrawer from '@/components/RestoreDrawer.vue'
 import FolderSelect from '@/components/FolderSelect.vue'
-import { uploadAvatar, fetchAvatar, deleteAvatar, changePassword, listBackupRules, getBackupRule, createBackupRule, updateBackupRule, deleteBackupRule, updateFeatureOrder, listWebDavConfigs, createWebDavConfig, updateWebDavConfig, deleteWebDavConfig, listWebDavCors, saveWebDavCors } from '@/api/system'
+import { uploadAvatar, fetchAvatar, deleteAvatar, changePassword, listBackupRules, getBackupRule, createBackupRule, updateBackupRule, deleteBackupRule, updateFeatureOrder, listWebDavConfigs, createWebDavConfig, updateWebDavConfig, deleteWebDavConfig, listWebDavCors, saveWebDavCors, listSessions, updateSessionName, revokeSession } from '@/api/system'
+import type { SessionInfo } from '@/api/system'
 import router from '@/router'
 
 const { t } = useI18n()
@@ -1083,10 +1123,73 @@ const loadAvatar = async () => {
   }
 }
 
+const sessionList = ref<SessionInfo[]>([])
+const loadingSessions = ref(false)
+
+const loadSessionList = async () => {
+  loadingSessions.value = true
+  try {
+    const res = await listSessions()
+    sessionList.value = res.success && res.sessions ? res.sessions : []
+  } catch {
+    sessionList.value = []
+  } finally {
+    loadingSessions.value = false
+  }
+}
+
+const formatTimestamp = (ts: number) => {
+  if (!ts) return '-'
+  const d = new Date(ts * 1000)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const getLastAccessText = (lastAccess: number) => {
+  if (!lastAccess) return '-'
+  const nowSecs = Math.floor(Date.now() / 1000)
+  const diff = nowSecs - lastAccess
+  if (diff < 0) return t('devices.online')
+  const days = Math.floor(diff / 86400)
+  const hours = Math.floor((diff % 86400) / 3600)
+  if (days > 0) return t('devices.agoDays', { days, hours })
+  if (hours > 0) return t('devices.agoHours', { hours })
+  const minutes = Math.floor((diff % 3600) / 60)
+  return t('devices.agoMinutes', { minutes: Math.max(minutes, 1) })
+}
+
+const handleEditDeviceName = async (row: SessionInfo) => {
+  try {
+    const result = await ElMessageBox.prompt(t('devices.renamePrompt'), t('devices.rename'), {
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
+      inputValue: row.device_name,
+      inputPlaceholder: t('devices.renamePlaceholder'),
+    }) as { value: string }
+    await updateSessionName({ session_id: row.id, device_name: result.value })
+    ElMessage.success({ __key: 'devices.renameSuccess' })
+    loadSessionList()
+  } catch {
+    // cancelled
+  }
+}
+
+const handleRevokeSession = async (row: SessionInfo) => {
+  try {
+    await ElMessageBox.confirm(t('devices.revokeConfirm'), t('common.confirm'), { type: 'warning' })
+    await revokeSession({ session_id: row.id })
+    ElMessage.success({ __key: 'devices.revokeSuccess' })
+    loadSessionList()
+  } catch {
+    // cancelled
+  }
+}
+
 onMounted(() => {
   if (!userStore.avatarBlob) loadAvatar()
   loadBackupList()
   loadWebdavList()
+  loadSessionList()
   initFeatureOrder()
   window.addEventListener('resize', handleResize)
 })

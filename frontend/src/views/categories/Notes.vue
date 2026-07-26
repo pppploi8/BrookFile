@@ -109,7 +109,7 @@
             <el-icon><ArrowLeft /></el-icon>
             <span>{{ noteTitle }}</span>
           </div>
-          <el-button size="small" type="primary" :loading="noteStore.currentNote?.isSaving" @click="handleSaveNote">
+          <el-button v-if="!isCollabMode" size="small" type="primary" :loading="noteStore.currentNote?.isSaving" @click="handleSaveNote">
             {{ t('notes.save') }}
           </el-button>
         </div>
@@ -208,8 +208,23 @@
         <div v-if="noteStore.currentNote" class="editor-container">
           <div class="editor-header">
             <span class="note-title">{{ noteTitle }}</span>
-            <span v-if="noteStore.currentNote.isSaving" class="save-status">{{ t('notes.saving') }}</span>
-            <span v-else-if="noteStore.currentNote.isDirty" class="save-status unsaved">{{ t('notes.unsaved') }}</span>
+            <template v-if="isCollabMode">
+              <span v-if="collabStatus === 'connected'" class="save-status"><span class="status-dot connected"></span>{{ t('notes.collabConnected') }}</span>
+              <span v-else-if="collabStatus === 'syncing'" class="save-status"><span class="status-dot syncing"></span>{{ t('notes.collabSyncing') }}</span>
+              <span v-else-if="collabStatus === 'disconnected'" class="save-status unsaved"><span class="status-dot disconnected"></span>{{ t('notes.collabDisconnected') }}</span>
+            </template>
+            <template v-else>
+              <span v-if="noteStore.currentNote.isSaving" class="save-status">{{ t('notes.saving') }}</span>
+              <span v-else-if="noteStore.currentNote.isDirty" class="save-status unsaved">{{ t('notes.unsaved') }}</span>
+            </template>
+            <el-switch
+              v-if="currentNotebook && !currentNotebook.encrypted"
+              v-model="autoSyncEnabled"
+              size="small"
+              :active-text="t('notes.autoSync')"
+              class="auto-sync-switch"
+              @change="handleAutoSyncToggle"
+            />
           </div>
           <div class="editor-toolbar">
             <el-tooltip :content="t('notes.toolbar.bold')" placement="top" :show-after="500">
@@ -265,7 +280,7 @@
               </span>
             </el-tooltip>
             <div class="toolbar-divider"></div>
-            <el-tooltip :content="t('notes.save')" placement="top" :show-after="500">
+            <el-tooltip v-if="!isCollabMode" :content="t('notes.save')" placement="top" :show-after="500">
               <span class="toolbar-btn" @click="handleSaveNote">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
               </span>
@@ -632,6 +647,10 @@ import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirro
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from '@codemirror/language'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete'
+import * as Y from 'yjs'
+import { yCollab } from 'y-codemirror.next'
+import { NoteCollabProvider } from '@/utils/noteCollab'
+import type { CollabStatus } from '@/utils/noteCollab'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
@@ -707,6 +726,27 @@ marked.setOptions({ gfm: true, breaks: true, renderer })
 const editorContainer = ref<HTMLElement | null>(null)
 const editorInstance = shallowRef<EditorView | null>(null)
 const themeCompartment = new Compartment()
+
+const ydoc = shallowRef<Y.Doc | null>(null)
+const collabProvider = shallowRef<NoteCollabProvider | null>(null)
+const collabStatus = ref<CollabStatus | null>(null)
+const isCollabMode = ref(false)
+const autoSyncNotes = ref<Set<string>>(new Set(JSON.parse(localStorage.getItem('brookfile_auto_sync_notes') || '[]')))
+const autoSyncEnabled = computed({
+  get: () => {
+    const note = noteStore.currentNote
+    if (!note) return false
+    return autoSyncNotes.value.has(`${note.notebookId}:${note.path}`)
+  },
+  set: (val: boolean) => {
+    const note = noteStore.currentNote
+    if (!note) return
+    const key = `${note.notebookId}:${note.path}`
+    if (val) autoSyncNotes.value.add(key)
+    else autoSyncNotes.value.delete(key)
+    localStorage.setItem('brookfile_auto_sync_notes', JSON.stringify([...autoSyncNotes.value]))
+  }
+})
 
 interface TreeNodeData {
   id: string
@@ -883,7 +923,9 @@ const noteTitle = computed(() => {
 const renderedContent = ref('')
 
 async function updateRenderedContent() {
-  const content = noteStore.currentNote?.content
+  const content = isCollabMode.value && ydoc.value
+    ? ydoc.value.getText('content').toString()
+    : noteStore.currentNote?.content
   if (!content) { renderedContent.value = ''; return }
   let processed = content
   const notebookId = noteStore.currentNote!.notebookId
@@ -1616,45 +1658,59 @@ async function handleFileUpload(e: Event) {
 function initEditor() {
   if (!editorContainer.value) return
   if (editorInstance.value) { editorInstance.value.destroy(); editorInstance.value = null }
-  const state = EditorState.create({
-    doc: noteStore.currentNote?.content || '',
-    extensions: [
-      lineNumbers(),
-      highlightActiveLineGutter(),
-      highlightSpecialChars(),
-      history(),
-      foldGutter(),
-      drawSelection(),
-      indentOnInput(),
-      bracketMatching(),
-      closeBrackets(),
-      autocompletion(),
-      rectangularSelection(),
-      highlightActiveLine(),
-      highlightSelectionMatches(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      keymap.of([
-        ...closeBracketsKeymap,
-        ...defaultKeymap,
-        ...searchKeymap,
-        ...historyKeymap,
-        ...completionKeymap,
-        indentWithTab,
-      ]),
-      markdown({ codeLanguages: languages }),
-      EditorView.lineWrapping,
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
-          noteStore.updateContent(update.state.doc.toString())
-        }
-      }),
-      themeCompartment.of(themeStore.isDark ? oneDark : []),
-      EditorView.theme({
-        '&': { height: '100%', fontSize: '14px' },
-        '.cm-scroller': { overflow: 'auto' },
-      }),
-    ],
-  })
+
+  const extensions = [
+    lineNumbers(),
+    highlightActiveLineGutter(),
+    highlightSpecialChars(),
+    history(),
+    foldGutter(),
+    drawSelection(),
+    indentOnInput(),
+    bracketMatching(),
+    closeBrackets(),
+    autocompletion(),
+    rectangularSelection(),
+    highlightActiveLine(),
+    highlightSelectionMatches(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    keymap.of([
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...searchKeymap,
+      ...historyKeymap,
+      ...completionKeymap,
+      indentWithTab,
+    ]),
+    markdown({ codeLanguages: languages }),
+    EditorView.lineWrapping,
+    themeCompartment.of(themeStore.isDark ? oneDark : []),
+    EditorView.theme({
+      '&': { height: '100%', fontSize: '14px' },
+      '.cm-scroller': { overflow: 'auto' },
+    }),
+  ]
+
+  if (isCollabMode.value && ydoc.value) {
+    const yText = ydoc.value.getText('content')
+    extensions.push(yCollab(yText, null))
+    extensions.push(EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        updateRenderedContent()
+      }
+    }))
+  } else {
+    extensions.push(EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        noteStore.updateContent(update.state.doc.toString())
+      }
+    }))
+  }
+
+  const doc = isCollabMode.value && ydoc.value
+    ? ydoc.value.getText('content').toString()
+    : (noteStore.currentNote?.content || '')
+  const state = EditorState.create({ doc, extensions })
   editorInstance.value = new EditorView({ state, parent: editorContainer.value })
   document.addEventListener('paste', handlePaste, true)
 }
@@ -1743,30 +1799,125 @@ async function handleSaveNote() {
 
 watch(() => themeStore.isDark, () => updateEditorTheme())
 
-watch(() => noteStore.currentNote, (note) => {
+function destroyCollab() {
+  if (collabProvider.value) {
+    collabProvider.value.destroy()
+    collabProvider.value = null
+  }
+  if (ydoc.value) {
+    ydoc.value.destroy()
+    ydoc.value = null
+  }
+  isCollabMode.value = false
+  collabStatus.value = null
+}
+
+watch(() => noteStore.currentNote, (note, oldNote) => {
   mobilePreviewMode.value = false
+  if (oldNote && (!note || note.path !== oldNote.path || note.notebookId !== oldNote.notebookId)) {
+    destroyCollab()
+    if (editorInstance.value) {
+      document.removeEventListener('paste', handlePaste, true)
+      editorInstance.value.destroy()
+      editorInstance.value = null
+    }
+  }
   if (note && !note.isLoading) {
     nextTick(() => initEditor())
-  } else if (editorInstance.value) {
+  } else if (!note && editorInstance.value) {
     document.removeEventListener('paste', handlePaste, true)
     editorInstance.value.destroy()
     editorInstance.value = null
   }
 }, { immediate: true })
 
-watch(() => noteStore.currentNote?.isLoading, (loading) => {
+watch(() => noteStore.currentNote?.isLoading, async (loading) => {
   if (loading === false && noteStore.currentNote) {
-    nextTick(() => {
-      if (!editorInstance.value) {
-        initEditor()
-      } else {
-        editorInstance.value.dispatch({
-          changes: { from: 0, to: editorInstance.value.state.doc.length, insert: noteStore.currentNote?.content || '' }
-        })
+    const nb = currentNotebook.value
+    if (nb && !nb.encrypted && autoSyncEnabled.value) {
+      destroyCollab()
+      if (editorInstance.value) {
+        document.removeEventListener('paste', handlePaste, true)
+        editorInstance.value.destroy()
+        editorInstance.value = null
       }
-    })
+      const doc = new Y.Doc()
+      ydoc.value = doc
+      isCollabMode.value = true
+      const provider = new NoteCollabProvider(
+        noteStore.currentNote.notebookId,
+        noteStore.currentNote.path,
+        doc,
+        noteStore.currentNote.content || ''
+      )
+      provider.onStatusChange = (status) => { collabStatus.value = status }
+      collabProvider.value = provider
+      await provider.ready
+      doc.getText('content').observe(() => {
+        if (renderTimer) clearTimeout(renderTimer)
+        renderTimer = setTimeout(() => updateRenderedContent(), 300)
+      })
+      nextTick(() => initEditor())
+      updateRenderedContent()
+    } else {
+      nextTick(() => {
+        if (!editorInstance.value) {
+          initEditor()
+        } else {
+          editorInstance.value!.dispatch({
+            changes: { from: 0, to: editorInstance.value!.state.doc.length, insert: noteStore.currentNote?.content || '' }
+          })
+        }
+      })
+    }
   }
 })
+
+async function handleAutoSyncToggle(enabled: boolean | string | number) {
+  const val = Boolean(enabled)
+  if (!noteStore.currentNote || noteStore.currentNote.isLoading) return
+  const nb = currentNotebook.value
+  if (!nb || nb.encrypted) return
+  if (!val && ydoc.value) {
+    const content = ydoc.value.getText('content').toString()
+    const note = noteStore.currentNote
+    note.content = content
+    const data = new TextEncoder().encode(content)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+    note.hash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+    note.isDirty = false
+  }
+  destroyCollab()
+  if (editorInstance.value) {
+    document.removeEventListener('paste', handlePaste, true)
+    editorInstance.value.destroy()
+    editorInstance.value = null
+  }
+  if (val) {
+    const doc = new Y.Doc()
+    ydoc.value = doc
+    isCollabMode.value = true
+    const provider = new NoteCollabProvider(
+      noteStore.currentNote.notebookId,
+      noteStore.currentNote.path,
+      doc,
+      noteStore.currentNote.content || ''
+    )
+    provider.onStatusChange = (status) => { collabStatus.value = status }
+    collabProvider.value = provider
+    await provider.ready
+    doc.getText('content').observe(() => {
+      if (renderTimer) clearTimeout(renderTimer)
+      renderTimer = setTimeout(() => updateRenderedContent(), 300)
+    })
+    nextTick(() => initEditor())
+    updateRenderedContent()
+  } else {
+    isCollabMode.value = false
+    nextTick(() => initEditor())
+    updateRenderedContent()
+  }
+}
 
 async function submitCreateNotebook() {
   if (!createNotebookFormRef.value) return
@@ -2196,6 +2347,7 @@ async function submitRename() {
 function handleKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault()
+    if (isCollabMode.value) return
     if (noteStore.currentNote?.isSaving) return
     handleSaveNote()
   }
@@ -2220,13 +2372,17 @@ onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   await notebookStore.fetchNotebooks()
   treeData.value = [{ id: 'root', label: t('home.categories.notes'), isRoot: true, isLeaf: false }]
-  nextTick(() => {
-    const rootNode = treeRef.value?.store.nodesMap['root']
-    if (rootNode) {
-      rootNode.loaded = false
-      rootNode.expand()
+  await nextTick()
+  const rootNode = treeRef.value?.store.nodesMap['root']
+  if (rootNode) {
+    rootNode.expand()
+    const firstNonEncrypted = notebookStore.notebooks.find(nb => !nb.encrypted)
+    if (firstNonEncrypted) {
+      currentNotebook.value = firstNonEncrypted
+      const nbNode = treeRef.value?.store.nodesMap[firstNonEncrypted.id]
+      if (nbNode) nbNode.expand()
     }
-  })
+  }
 })
 
 onUnmounted(() => {
@@ -2294,9 +2450,14 @@ onUnmounted(() => {
 .encrypt-switch-label { font-size: 14px; color: var(--el-text-color-regular); }
 .editor-container { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-header { padding: 12px 16px; border-bottom: 1px solid var(--el-border-color-lighter); flex-shrink: 0; display: flex; align-items: center; gap: 12px; }
+.auto-sync-switch { margin-left: auto; }
 .note-title { font-size: 16px; font-weight: 600; color: var(--el-text-color-primary); }
 .save-status { font-size: 12px; color: var(--el-text-color-secondary); }
 .save-status.unsaved { color: var(--el-text-color-secondary); }
+.status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.status-dot.connected { background-color: var(--el-color-success); }
+.status-dot.syncing { background-color: var(--el-color-warning); }
+.status-dot.disconnected { background-color: var(--el-color-danger); }
 .editor-wrapper { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-right: 1px solid var(--el-border-color-lighter); }
 .editor-toolbar { display: flex; align-items: center; gap: 2px; padding: 6px 10px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); flex-shrink: 0; }

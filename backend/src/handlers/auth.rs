@@ -90,8 +90,10 @@ pub async fn login(
                     if let Some(root_path) = &user.root_path {
                         app_state.session_manager.set(&new_session_id, "root_path", root_path);
                     }
+                    let user_agent = http_req.headers().get("User-Agent").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+                    let client_ip = crate::session_manager::extract_client_ip(http_req.headers(), http_req.peer_addr());
                     app_state.session_manager.enforce_max_devices(&user.id);
-                    app_state.session_manager.persist_session(&new_session_id);
+                    app_state.session_manager.persist_session(&new_session_id, &user_agent, &client_ip);
 
                     HttpResponse::Ok().json(ApiResponse {
                         success: true,

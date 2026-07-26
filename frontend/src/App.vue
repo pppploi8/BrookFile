@@ -4,7 +4,7 @@
       <el-icon class="is-loading" :size="48">
         <Loading />
       </el-icon>
-      <p v-if="loadFailed" class="mt-4 text-gray-400">{{ t('app.loadFailed') }}</p>
+      <p v-if="loadFailed" class="mt-4 text-gray-900">{{ t('app.loadFailed') }}</p>
     </div>
     <router-view v-else />
   </el-config-provider>

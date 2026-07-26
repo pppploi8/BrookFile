@@ -252,7 +252,7 @@ import {
   UserFilled,
   More,
   Share,
-  Delete
+  Delete,
 } from '@element-plus/icons-vue'
 import { logout, fetchAvatar } from '@/api'
 import { useUserStore } from '@/stores/user'

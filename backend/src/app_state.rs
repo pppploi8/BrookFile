@@ -1,9 +1,10 @@
 use crate::backup::{BackupManager, BackupScheduler};
 use crate::database::Pool;
+use crate::handlers::note_ws::NoteRoomManager;
 use crate::models::{
     BackupRuleModel, NotebookModel, RecycleBinModel, ShareModel,
-    SystemConfigModel, UploadCacheModel, UserModel, VaultModel, WebDavConfigModel,
-    WebDavCorsModel,
+    SystemConfigModel, UploadCacheModel, UserModel, VaultModel,
+    WebDavConfigModel, WebDavCorsModel,
 };
 use crate::restore::RestoreManager;
 use crate::search::SearchManager;
@@ -30,6 +31,7 @@ pub struct AppState {
     pub share_model: ShareModel,
     pub webdav_config_model: WebDavConfigModel,
     pub webdav_cors_model: WebDavCorsModel,
+    pub note_rooms: Arc<NoteRoomManager>,
     pub cors_origins: Arc<RwLock<HashSet<String>>>,
     pub notebook_key_cache: Arc<Mutex<HashMap<String, (Vec<u8>, std::time::Instant)>>>,
     pub share_tokens: Arc<Mutex<HashMap<String, ShareTokenEntry>>>,
@@ -54,6 +56,7 @@ impl AppState {
         let attachment_secret = uuid::Uuid::new_v4().to_string();
         let webdav_cors_model = WebDavCorsModel::new(&pool);
         let cors_origins = Arc::new(RwLock::new(webdav_cors_model.all_origins().unwrap_or_default()));
+        let note_rooms = Arc::new(NoteRoomManager::new());
         AppState {
             user_model: UserModel::new(&pool),
             system_config_model: SystemConfigModel::new(&pool),
@@ -65,6 +68,7 @@ impl AppState {
             share_model: ShareModel::new(&pool),
             webdav_config_model: WebDavConfigModel::new(&pool),
             webdav_cors_model,
+            note_rooms,
             cors_origins,
             notebook_key_cache: Arc::new(Mutex::new(HashMap::new())),
             share_tokens: Arc::new(Mutex::new(HashMap::new())),

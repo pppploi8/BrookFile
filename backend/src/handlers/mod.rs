@@ -16,6 +16,8 @@ pub mod share;
 pub mod webdav;
 pub mod webdav_protocol;
 pub mod webdav_cors;
+pub mod note_ws;
+pub mod session;
 
 pub use system::*;
 pub use init::*;
@@ -35,3 +37,5 @@ pub use share::*;
 pub use webdav::*;
 pub use webdav_protocol::*;
 pub use webdav_cors::*;
+pub use note_ws::*;
+pub use session::*;

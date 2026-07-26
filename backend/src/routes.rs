@@ -72,6 +72,15 @@ pub fn configure(app: &mut web::ServiceConfig, app_state: web::Data<AppState>) {
         )
         .route("/api/auth/login", web::post().to(handlers::login))
         .route("/api/auth/logout", web::post().to(handlers::logout))
+        .route("/api/session/list", web::post().to(handlers::list_sessions))
+        .route(
+            "/api/session/update_name",
+            web::post().to(handlers::update_session_name),
+        )
+        .route(
+            "/api/session/revoke",
+            web::post().to(handlers::revoke_session),
+        )
         .route("/api/file/browse", web::post().to(handlers::browse_files))
         .route(
             "/api/file/download",
@@ -322,6 +331,10 @@ pub fn configure(app: &mut web::ServiceConfig, app_state: web::Data<AppState>) {
         .route(
             "/api/webdav/cors/save",
             web::post().to(handlers::save_webdav_cors),
+        )
+        .route(
+            "/ws/note",
+            web::get().to(handlers::note_ws),
         )
         .service(
             web::scope("/dav")

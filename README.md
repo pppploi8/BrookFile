@@ -68,6 +68,7 @@ server {
 ```json
 {
     "port": 3000,
+    "trusted_proxy": false,
     "argon2": {
         "m_cost": 19456,
         "t_cost": 2,
@@ -79,6 +80,7 @@ server {
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `port` | 整数 | `3000` | 服务监听端口 |
+| `trusted_proxy` | 布尔 | `false` | 是否信任反向代理传递的客户端 IP（`X-Real-IP` / `X-Forwarded-For`）。部署在 Nginx 等反代后时设为 `true`，否则登录设备记录中的 IP 将始终为代理地址 |
 | `argon2.m_cost` | 整数 | `19456` | Argon2 内存开销（KB），影响密码哈希计算使用的内存量 |
 | `argon2.t_cost` | 整数 | `2` | Argon2 迭代次数，影响密码哈希计算耗时 |
 | `argon2.p_cost` | 整数 | `1` | Argon2 并行度，影响密码哈希计算使用的线程数 |

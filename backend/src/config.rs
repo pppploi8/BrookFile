@@ -34,6 +34,8 @@ pub struct Config {
     #[serde(default = "Config::default_port")]
     pub port: u16,
     #[serde(default)]
+    pub trusted_proxy: bool,
+    #[serde(default)]
     pub argon2: Argon2Config,
 }
 
@@ -41,6 +43,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             port: Self::default_port(),
+            trusted_proxy: false,
             argon2: Argon2Config::default(),
         }
     }

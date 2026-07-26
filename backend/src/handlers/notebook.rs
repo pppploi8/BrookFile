@@ -891,6 +891,15 @@ pub async fn save_note(
                                 error_logger::log_error("search/index_note", &e);
                             }
                         });
+
+                        let yjs_path = full_path.with_extension("yjs");
+                        let _ = std::fs::remove_file(&yjs_path);
+                        let room_key = full_path.canonicalize()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|_| full_path.to_string_lossy().to_string());
+                        let mut msg = vec![0x02u8];
+                        msg.extend_from_slice(req.content.as_bytes());
+                        app_state.note_rooms.broadcast(&room_key, msg);
                     }
 
                     HttpResponse::Ok().json(SaveNoteResponse {
@@ -965,6 +974,15 @@ pub async fn save_note(
                                 error_logger::log_error("search/index_note", &e);
                             }
                         });
+
+                        let yjs_path = full_path.with_extension("yjs");
+                        let _ = std::fs::remove_file(&yjs_path);
+                        let room_key = full_path.canonicalize()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|_| full_path.to_string_lossy().to_string());
+                        let mut msg = vec![0x02u8];
+                        msg.extend_from_slice(req.content.as_bytes());
+                        app_state.note_rooms.broadcast(&room_key, msg);
                     }
 
                     HttpResponse::Ok().json(SaveNoteResponse {

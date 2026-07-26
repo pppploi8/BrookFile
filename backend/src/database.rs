@@ -2,7 +2,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 
 pub type Pool = r2d2::Pool<SqliteConnectionManager>;
 
-const SCHEMA_VERSION: i32 = 3;
+const SCHEMA_VERSION: i32 = 4;
 
 pub struct Database {
     pub pool: Pool,
@@ -240,6 +240,9 @@ impl Database {
             "CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
+                device_name TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                ip_address TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL,
                 last_access_time INTEGER NOT NULL
             )",
@@ -296,6 +299,23 @@ impl Database {
         }
         if from < 3 {
             Self::create_webdav_cors_table(conn)?;
+        }
+        if from < 4 {
+            conn.execute("DROP TABLE IF EXISTS sessions", [])?;
+            conn.execute(
+                "CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    device_name TEXT NOT NULL DEFAULT '',
+                    user_agent TEXT NOT NULL DEFAULT '',
+                    ip_address TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    last_access_time INTEGER NOT NULL
+                )",
+                [],
+            )?;
+            conn.execute("CREATE INDEX idx_sessions_user_id ON sessions(user_id)", [])?;
+            conn.execute("CREATE INDEX idx_sessions_last_access ON sessions(last_access_time)", [])?;
         }
 
         Ok(())

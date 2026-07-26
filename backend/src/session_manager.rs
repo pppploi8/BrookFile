@@ -12,6 +12,8 @@ struct MemorySession {
     data: HashMap<String, String>,
     last_access_time: Instant,
     last_db_sync_time: Instant,
+    last_cookie_refresh: Instant,
+    ip_address: String,
 }
 
 pub struct SessionManager {
@@ -61,6 +63,10 @@ impl SessionManager {
         manager
     }
 
+    pub fn pool(&self) -> &Pool {
+        &self.pool
+    }
+
     fn load_sessions_from_db(&self) {
         let timeout_days = *self.timeout_days.read().unwrap_or_else(|e| e.into_inner());
         let now_secs = now_secs();
@@ -72,7 +78,7 @@ impl SessionManager {
         };
 
         let mut stmt = match conn.prepare(
-            "SELECT s.id, s.user_id, u.username, u.is_admin, u.root_path \
+            "SELECT s.id, s.user_id, u.username, u.is_admin, u.root_path, s.ip_address \
              FROM sessions s JOIN users u ON s.user_id = u.id \
              WHERE s.last_access_time > ?1"
         ) {
@@ -87,6 +93,7 @@ impl SessionManager {
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
                 row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
             ))
         }) {
             Ok(r) => r,
@@ -95,7 +102,7 @@ impl SessionManager {
 
         let mut sessions = self.sessions.write().unwrap_or_else(|e| e.into_inner());
         for row in rows {
-            if let Ok((id, user_id, username, is_admin, root_path)) = row {
+            if let Ok((id, user_id, username, is_admin, root_path, ip_address)) = row {
                 let mut data = HashMap::new();
                 data.insert("user_id".to_string(), user_id);
                 data.insert("username".to_string(), username);
@@ -107,6 +114,8 @@ impl SessionManager {
                     data,
                     last_access_time: Instant::now(),
                     last_db_sync_time: Instant::now(),
+                    last_cookie_refresh: Instant::now(),
+                    ip_address,
                 });
             }
         }
@@ -137,7 +146,7 @@ impl SessionManager {
         self.get_session_timeout_days() * 86400
     }
 
-    pub fn validate_session(&self, session_id: &str) -> bool {
+    pub fn validate_session(&self, session_id: &str, ip: &str) -> bool {
         let timeout = self.timeout_secs();
         let should_sync;
         {
@@ -149,6 +158,7 @@ impl SessionManager {
                     let mut sessions_mut = self.write_sessions();
                     if let Some(sd) = sessions_mut.get_mut(session_id) {
                         sd.last_access_time = Instant::now();
+                        sd.ip_address = ip.to_string();
                         if should_sync {
                             sd.last_db_sync_time = Instant::now();
                         }
@@ -164,10 +174,14 @@ impl SessionManager {
     }
 
     fn sync_access_time_to_db(&self, session_id: &str) {
+        let ip = {
+            let sessions = self.read_sessions();
+            sessions.get(session_id).map(|sd| sd.ip_address.clone()).unwrap_or_default()
+        };
         if let Ok(conn) = self.pool.get() {
             let _ = conn.execute(
-                "UPDATE sessions SET last_access_time = ?1 WHERE id = ?2",
-                params![now_secs(), session_id],
+                "UPDATE sessions SET last_access_time = ?1, ip_address = ?2 WHERE id = ?3",
+                params![now_secs(), ip, session_id],
             );
         }
     }
@@ -178,6 +192,8 @@ impl SessionManager {
             data: HashMap::new(),
             last_access_time: Instant::now(),
             last_db_sync_time: Instant::now(),
+            last_cookie_refresh: Instant::now(),
+            ip_address: String::new(),
         };
 
         self.write_sessions().insert(session_id.clone(), session_data);
@@ -284,13 +300,13 @@ impl SessionManager {
         Some(new_session_id)
     }
 
-    pub fn persist_session(&self, session_id: &str) {
+    pub fn persist_session(&self, session_id: &str, user_agent: &str, ip_address: &str) {
         let user_id = self.get(session_id, "user_id");
         if let Some(user_id) = user_id {
             if let Ok(conn) = self.pool.get() {
                 let _ = conn.execute(
-                    "INSERT OR REPLACE INTO sessions (id, user_id, created_at, last_access_time) VALUES (?1, ?2, ?3, ?4)",
-                    params![session_id, user_id, now_secs(), now_secs()],
+                    "INSERT OR REPLACE INTO sessions (id, user_id, device_name, user_agent, ip_address, created_at, last_access_time) VALUES (?1, ?2, '', ?3, ?4, ?5, ?5)",
+                    params![session_id, user_id, user_agent, ip_address, now_secs()],
                 );
             }
         }
@@ -328,6 +344,18 @@ impl SessionManager {
     pub fn take_regenerated(&self, old_session_id: &str) -> Option<String> {
         let mut regen = self.regenerated.write().unwrap_or_else(|e| e.into_inner());
         regen.remove(old_session_id)
+    }
+
+    pub fn should_refresh_cookie(&self, session_id: &str) -> bool {
+        let refresh_interval = self.timeout_secs() / 10;
+        let mut sessions = self.write_sessions();
+        if let Some(sd) = sessions.get_mut(session_id) {
+            if sd.last_cookie_refresh.elapsed().as_secs() >= refresh_interval {
+                sd.last_cookie_refresh = Instant::now();
+                return true;
+            }
+        }
+        false
     }
 
     pub fn get_login_delay(&self, username: &str) -> u64 {
@@ -393,4 +421,24 @@ fn now_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+pub fn extract_client_ip(headers: &actix_web::http::header::HeaderMap, peer_addr: Option<std::net::SocketAddr>) -> String {
+    if crate::config::Config::global().trusted_proxy {
+        if let Some(real_ip) = headers.get("X-Real-IP").and_then(|v| v.to_str().ok()) {
+            let ip = real_ip.trim();
+            if !ip.is_empty() {
+                return ip.to_string();
+            }
+        }
+        if let Some(forwarded) = headers.get("X-Forwarded-For").and_then(|v| v.to_str().ok()) {
+            if let Some(first) = forwarded.split(',').next() {
+                let ip = first.trim();
+                if !ip.is_empty() {
+                    return ip.to_string();
+                }
+            }
+        }
+    }
+    peer_addr.map(|a| a.ip().to_string()).unwrap_or_default()
 }

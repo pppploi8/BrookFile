@@ -1273,4 +1273,43 @@ export async function deleteSystemLogo(): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/system/delete_logo', data: {} })
 }
 
+// ==================== 登录设备接口 ====================
+
+export interface SessionInfo {
+  id: string
+  device_name: string
+  user_agent: string
+  ip_address: string
+  created_at: number
+  last_access_time: number
+  is_current: boolean
+}
+
+export interface ListSessionsResponse {
+  success: boolean
+  fail_code?: string
+  sessions?: SessionInfo[]
+}
+
+export interface UpdateSessionNameRequest {
+  session_id: string
+  device_name: string
+}
+
+export interface RevokeSessionRequest {
+  session_id: string
+}
+
+export async function listSessions(): Promise<ListSessionsResponse> {
+  return request({ method: 'POST', url: '/session/list', data: {} })
+}
+
+export async function updateSessionName(data: UpdateSessionNameRequest): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/session/update_name', data })
+}
+
+export async function revokeSession(data: RevokeSessionRequest): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/session/revoke', data })
+}
+
 export default api

@@ -62,6 +62,94 @@ fn start_cleanup_thread(pool: database::Pool, notebook_key_cache: Arc<Mutex<Hash
     });
 }
 
+fn cleanup_orphaned_attachments(pool: &database::Pool) {
+    let notebook_model = models::NotebookModel::new(pool);
+    let user_model = models::UserModel::new(pool);
+
+    let notebooks = match notebook_model.list_all_non_encrypted() {
+        Ok(list) => list,
+        Err(_) => return,
+    };
+
+    for (user_id, nb) in &notebooks {
+        let user = match user_model.get_user_full(user_id) {
+            Ok(Some(u)) => u,
+            _ => continue,
+        };
+        let root_path = match &user.root_path {
+            Some(rp) => rp,
+            None => continue,
+        };
+
+        let nb_path = std::path::Path::new(root_path).join(&nb.path);
+        let attachment_dir = nb_path.join("attachment");
+        if !attachment_dir.is_dir() {
+            continue;
+        }
+
+        let mut referenced = std::collections::HashSet::new();
+        for entry in walkdir::WalkDir::new(&nb_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext == "md" {
+                        if let Ok(content) = std::fs::read_to_string(path) {
+                            for cap in regex_find_attachments(&content) {
+                                referenced.insert(cap);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Ok(entries) = std::fs::read_dir(&attachment_dir) {
+            for entry in entries.flatten() {
+                let file_path = entry.path();
+                if file_path.is_file() {
+                    if let Some(name) = file_path.file_name().and_then(|n| n.to_str()) {
+                        if !referenced.contains(name) {
+                            let _ = std::fs::remove_file(&file_path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn regex_find_attachments(content: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    let patterns = ["attachment/", "attachment%2F"];
+    for line in content.lines() {
+        for pat in &patterns {
+            let mut search_from = 0;
+            while let Some(idx) = line[search_from..].find(pat) {
+                let start = search_from + idx + pat.len();
+                let rest = &line[start..];
+                let end = rest.find(|c: char| c == ')' || c == '>' || c.is_whitespace() || c == '"');
+                let filename = match end {
+                    Some(e) => &rest[..e],
+                    None => rest,
+                };
+                let filename = filename.trim();
+                if !filename.is_empty() && !filename.contains('/') && !filename.contains("..") {
+                    if let Some(decoded) = urlencoding::decode(filename).ok() {
+                        results.push(decoded.to_string());
+                    } else {
+                        results.push(filename.to_string());
+                    }
+                }
+                search_from = start;
+            }
+        }
+    }
+    results
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     std::panic::set_hook(Box::new(|panic_info| {
@@ -126,6 +214,7 @@ async fn main() -> std::io::Result<()> {
     println!("AppState initialized");
 
     let pool_for_search = database.pool.clone();
+    let pool_for_cleanup = database.pool.clone();
 
     start_cleanup_thread(database.pool, app_state.notebook_key_cache.clone(), app_state.share_tokens.clone());
 
@@ -185,6 +274,15 @@ async fn main() -> std::io::Result<()> {
         scheduler_clone.run().await;
     });
     println!("Backup scheduler started");
+
+    let pool_cleanup = pool_for_cleanup;
+    tokio::spawn(async move {
+        loop {
+            actix_web::rt::time::sleep(Duration::from_secs(300)).await;
+            cleanup_orphaned_attachments(&pool_cleanup);
+        }
+    });
+    println!("Attachment cleanup timer started");
 
     HttpServer::new(move || {
         App::new()

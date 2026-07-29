@@ -164,7 +164,7 @@ impl SessionManager {
                         }
                     }
                     if should_sync {
-                        self.sync_access_time_to_db(session_id);
+                        self.sync_access_time_to_db(session_id, ip);
                     }
                     return true;
                 }
@@ -173,11 +173,7 @@ impl SessionManager {
         false
     }
 
-    fn sync_access_time_to_db(&self, session_id: &str) {
-        let ip = {
-            let sessions = self.read_sessions();
-            sessions.get(session_id).map(|sd| sd.ip_address.clone()).unwrap_or_default()
-        };
+    fn sync_access_time_to_db(&self, session_id: &str, ip: &str) {
         if let Ok(conn) = self.pool.get() {
             let _ = conn.execute(
                 "UPDATE sessions SET last_access_time = ?1, ip_address = ?2 WHERE id = ?3",

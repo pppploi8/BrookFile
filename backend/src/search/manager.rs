@@ -92,6 +92,10 @@ impl SearchManager {
     pub fn init_search_db(&self, notebook_id: &str) -> Result<(), String> {
         let lock = self.get_notebook_lock(notebook_id);
         let _guard = lock.lock().map_err(|e| e.to_string())?;
+        self.init_search_db_locked(notebook_id)
+    }
+
+    fn init_search_db_locked(&self, notebook_id: &str) -> Result<(), String> {
         let conn = self.get_connection(notebook_id)?;
         let result = conn.execute_batch(
             "CREATE VIRTUAL TABLE IF NOT EXISTS note_index USING fts5(content, tokenize='unicode61', content='note_index_content');
@@ -112,9 +116,22 @@ impl SearchManager {
         if !self.enabled {
             return Ok(());
         }
-        self.init_search_db(notebook_id)?;
         let lock = self.get_notebook_lock(notebook_id);
         let _guard = lock.lock().map_err(|e| e.to_string())?;
+        self.index_note_locked(notebook_id, note_path, content, notebook_root)
+    }
+
+    fn index_note_locked(
+        &self,
+        notebook_id: &str,
+        note_path: &str,
+        content: &str,
+        notebook_root: &str,
+    ) -> Result<(), String> {
+        if !self.enabled {
+            return Ok(());
+        }
+        self.init_search_db_locked(notebook_id)?;
         let conn = self.get_connection(notebook_id)?;
 
         let result = {
@@ -195,6 +212,13 @@ impl SearchManager {
         }
         let lock = self.get_notebook_lock(notebook_id);
         let _guard = lock.lock().map_err(|e| e.to_string())?;
+        self.remove_note_index_locked(notebook_id, note_path)
+    }
+
+    fn remove_note_index_locked(&self, notebook_id: &str, note_path: &str) -> Result<(), String> {
+        if !self.enabled {
+            return Ok(());
+        }
         let conn = self.get_connection(notebook_id)?;
         let result = Self::retry_on_busy(|| {
             let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
@@ -666,14 +690,14 @@ impl SearchManager {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
-                let _ = self.index_note(notebook_id, &normalized, &content, notebook_root);
+                let _ = self.index_note_locked(notebook_id, &normalized, &content, notebook_root);
             }
         }
 
         for indexed_path in indexed_files.keys() {
             let full_path = root.join(indexed_path);
             if !full_path.exists() {
-                let _ = self.remove_note_index(notebook_id, indexed_path);
+                let _ = self.remove_note_index_locked(notebook_id, indexed_path);
             }
         }
 

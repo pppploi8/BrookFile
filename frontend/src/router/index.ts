@@ -38,6 +38,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/categories/Passwords.vue'),
       },
       {
+        path: 'ebooks',
+        name: 'Ebooks',
+        component: () => import('@/views/categories/Ebooks.vue'),
+      },
+      {
         path: 'recycle-bin',
         name: 'RecycleBin',
         component: () => import('@/views/categories/RecycleBin.vue'),
@@ -70,6 +75,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/SharePage.vue'),
     meta: { public: true },
   },
+  {
+    path: '/ebooks/read/:id',
+    name: 'EbookReader',
+    component: () => import('@/views/reader/Reader.vue'),
+    meta: { requiresAuth: true },
+  },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
@@ -95,6 +106,11 @@ router.beforeEach((to) => {
 
   if (to.meta.requiresAuth && !userStore.loggedIn) {
     return { path: '/login', replace: true }
+  }
+
+  // 电子书模块按需显示：未设置存储目录（未启用）时禁止访问
+  if (to.path.startsWith('/ebooks') && !userStore.user?.ebook_enabled) {
+    return { path: '/', replace: true }
   }
 
   if (to.meta.requiresNoLogin && userStore.loggedIn) {

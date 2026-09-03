@@ -25,7 +25,7 @@ function handleNotLoggedIn() {
   router.push('/login')
 }
 
-async function request<T>(config: Parameters<typeof api.request>[0] & { skipErrorMessage?: boolean; rawResponse?: boolean }): Promise<T> {
+export async function request<T>(config: Parameters<typeof api.request>[0] & { skipErrorMessage?: boolean; rawResponse?: boolean }): Promise<T> {
   try {
     const response = await api.request<T & { success?: boolean; fail_code?: string; message?: string }>(config)
     if (response.data?.fail_code && !config.rawResponse) {
@@ -60,7 +60,7 @@ async function request<T>(config: Parameters<typeof api.request>[0] & { skipErro
   }
 }
 
-async function requestWithSuccess<T extends ApiResponse>(config: Parameters<typeof api.request>[0] & { skipErrorMessage?: boolean }): Promise<T> {
+export async function requestWithSuccess<T extends ApiResponse>(config: Parameters<typeof api.request>[0] & { skipErrorMessage?: boolean }): Promise<T> {
   const response = await request<T>(config)
   if (!response.success) {
     throw new Error(response.fail_code || 'UNKNOWN_ERROR')
@@ -82,6 +82,9 @@ export interface UserInfo {
   feature_order?: string
   recycle_bin_enabled?: boolean
   has_shares?: boolean
+  ebook_path?: string
+  ebook_enabled?: boolean
+  ebook_db_status?: string
 }
 
 export interface InitRequest {
@@ -245,6 +248,10 @@ export async function changePassword(oldPassword: string, newPassword: string): 
 
 export async function updateFeatureOrder(featureOrder: string): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/user/update_feature_order', data: { feature_order: featureOrder } })
+}
+
+export async function setEbookPath(path: string): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/user/set_ebook_path', data: { ebook_path: path } })
 }
 
 export async function browseFolders(path?: string): Promise<BrowseResponse> {

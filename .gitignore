@@ -14,3 +14,5 @@ output/
 *.pyc
 .vscode
 .workbuddy/
+.dev/
+frontend/dist-test/

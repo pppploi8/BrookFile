@@ -9,6 +9,7 @@ use crate::models::{
 use crate::restore::RestoreManager;
 use crate::search::SearchManager;
 use crate::session_manager::SessionManager;
+use crate::ebook::EbookScanManager;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -41,6 +42,7 @@ pub struct AppState {
     pub backup_scheduler: Arc<BackupScheduler>,
     pub restore_manager: Arc<RestoreManager>,
     pub search_manager: Arc<SearchManager>,
+    pub ebook_scan_manager: Arc<EbookScanManager>,
 }
 
 impl AppState {
@@ -51,6 +53,7 @@ impl AppState {
         backup_scheduler: Arc<BackupScheduler>,
         restore_manager: Arc<RestoreManager>,
         fulltext_search_enabled: bool,
+        ebook_scan_manager: Arc<EbookScanManager>,
     ) -> Self {
         let search_manager = Arc::new(SearchManager::new(fulltext_search_enabled));
         let attachment_secret = uuid::Uuid::new_v4().to_string();
@@ -77,6 +80,7 @@ impl AppState {
             backup_scheduler,
             restore_manager,
             search_manager,
+            ebook_scan_manager,
             attachment_secret,
         }
     }

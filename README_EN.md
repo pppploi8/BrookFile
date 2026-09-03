@@ -19,10 +19,10 @@ A cloud storage system designed for personal/home users, an experimental project
 - **Cloud Notes** - Convenient cloud-based note management with end-to-end encryption
 - **Password Manager** - End-to-end encrypted password storage and management
 - **WebDAV Support** - Standard WebDAV protocol support, compatible with various clients
+- **E-book Reader** - Online reading for TXT / EPUB / PDF: bookshelf management with custom categories, four reading layouts (single/double page × scroll/paginated), font/size/theme/line-spacing settings, free bookmarks with 3-slot automatic progress tracking, and IndexedDB local caching (no re-download after first open); TXT encoding auto-detection (GBK/GB18030, etc.) with streaming chapter indexing for 100MB+ files
 
 ## Roadmap
 
-- **E-book Reader** - Online reading support for multiple e-book formats
 - **Music Library** - Online music management and streaming playback
 - **Video Transcoding** - Online video transcoding and playback
 - **Photo Browser** - Photo browsing by time/content with fast search

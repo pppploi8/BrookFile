@@ -23,6 +23,23 @@ npm run build        # 类型检查 + vite 构建
 npm run dev          # 开发服务器，0.0.0.0:8080，代理 /api → localhost:3000
 ```
 
+### 调试启动脚本（dev.py）
+
+项目根目录 `dev.py` 用于非阻塞地管理前后端调试进程（后台 `cargo run` + `npm run dev`），跨平台（Windows/Linux），可重复执行：
+
+```bash
+python dev.py start     # 后台启动前后端，已在运行的组件自动跳过，命令立即返回
+python dev.py status    # 查看运行状态（PID、启动时间、端口监听）
+python dev.py restart   # 先停止再启动
+python dev.py stop      # 停止所有由脚本启动的进程
+```
+
+- 状态与 PID 记录在 `.dev/state.json`，日志在 `.dev/backend.log`、`.dev/frontend.log`（每次 start 覆盖）
+
+- `start` 只负责拉起进程，是否就绪通过 `status` 查看（含端口监听检测），后端首次启动需等待 cargo 编译
+
+- **AI 代理必须遵守**：启动/停止前后端一律通过 `python dev.py ...`，禁止用 shell 后台（`&`、`run_in_background`）启动，禁止用 `kill`/`pkill`/`taskkill` 按进程名或按 PID 盲杀——多项目同机开发时按名字杀进程会误杀其他项目。脚本只操作 `.dev/state.json` 中记录且校验过进程身份（PID 复用防护）的进程
+
 ### API 集成测试（tests/ 目录下）
 
 每个测试脚本是独立运行的 Python 文件，会自动编译后端、启动服务器、执行测试、关闭服务器。**不支持并行测试**，必须逐个串行执行，否则会因端口冲突或数据库状态冲突导致测试失败：
@@ -71,9 +88,11 @@ python frontend/test_i18n.py              # 国际化键值检查
 ## 后端代码规范
 
 ### 技术栈
+
 Rust + Actix-web + r2d2 + rusqlite + serde
 
 ### 目录结构
+
 ```
 backend/src/
 ├── main.rs              # 入口，服务器启动、 AppState 初始化
@@ -93,37 +112,55 @@ backend/src/
 ```
 
 ### 接口规范
+
 - 除 SSE 外，统一使用 POST，不使用 RESTful 风格
+
 - 错误响应使用 `fail_code` 字符串（全大写 + 下划线），不返回错误文本
+
 - 成功响应：`{ "success": true }`
+
 - 失败响应：`{ "success": false, "fail_code": "ERROR_CODE" }`
+
 - 内部错误统一返回 `fail_code: "INTERNAL_ERROR"`，同时调用 `error_logger::log_error()` 记录
 
 ### 分层架构
+
 - **models 层**：纯数据结构，不含 Serialize/Deserialize，命名为 `UserInfo`、`BackupRuleDetail` 等。通过 `impl From<ModelType> for ResponseType` 实现到响应类型的转换
+
 - **handlers 层**：定义请求结构体（`#[derive(Deserialize)]`，命名 `XxxRequest`）和响应结构体（`#[derive(Serialize)]`，命名 `XxxResponse`）
+
 - 通用工具函数在 `handlers/response.rs`：`get_current_user_id()`、`get_user_root_path()`、`check_admin()`、`internal_error_response()`
+
 - 安全检查函数在 `handlers/security.rs`：`is_path_under_root()`、`is_safe_path()`、`is_safe_name()`
 
 ### 模块组织
+
 - `mod.rs` 中声明子模块并使用 `pub use xxx::*` 重新导出
+
 - 路由全部集中在 `routes.rs` 中注册
 
 ### 数据库
+
 - SQLite，连接池 r2d2，SQL 使用 `params![]` 宏
+
 - 表结构定义在 `database.rs` 的 `init_tables()` 中
+
 - 修改表结构时必须同步更新 `database/{模块}.md` 文档
 
 ### 错误处理
+
 - models 层返回 `Result<T, String>`，使用 `.map_err(|e| e.to_string())` 转换
+
 - handlers 层返回 `HttpResponse::Ok().json(ApiResponse { ... })`，始终 HTTP 200
 
 ## 前端代码规范
 
 ### 技术栈
+
 Vue 3 + Element Plus + Tailwind CSS 4 + Pinia + Vue Router + Vue I18n + Axios + TypeScript
 
 ### 目录结构
+
 ```
 frontend/src/
 ├── main.ts              # 入口，注册插件
@@ -138,65 +175,104 @@ frontend/src/
 ```
 
 ### TypeScript
+
 - 严格模式：`strict: true`、`noUnusedLocals`、`noUnusedParameters`
+
 - 路径别名：`@/` → `src/`
+
 - API 类型定义统一在 `api/system.ts` 中
 
 ### 样式规范
+
 - 所有页面 `<style>` 必须加 `scoped`
+
 - 禁止使用 `:deep` 覆盖子组件样式，样式只允许全局统一调整
+
 - 连续使用 `el-button`/`el-link` 时，全局样式已有间距，不额外添加
+
 - 充满高度时使用 flex 布局，禁止用绝对尺寸计算
 
 ### 组件规范
+
 - 操作列统一使用 `el-link`
+
 - 国际化：所有 UI 文本必须同时提供中文和英文翻译（`i18n/locales/` 下）
 
 ### API 调用
+
 - 通过 `request()` 和 `requestWithSuccess()` 封装，自动处理 `fail_code` 和错误提示
+
 - `NOT_LOGGED_IN` 自动跳转登录页
 
 ## 测试规范
 
 - 每个测试脚本独立完整：编译 → 创建临时 workdir → 启动后端（workdir 作为工作目录）→ 执行测试 → 关闭后端
+
 - 每个脚本会创建全新的数据库，不依赖外部状态
+
 - 使用 `requests.Session()` 保持会话
+
 - 公共函数在 `tests/common.py`：`build_backend`、`start_backend`、`start_frontend`、`init_system`、`login`、`print_error_log`、`stop_backend`
+
 - 后端测试通过 `tests/backend/test_utils.py` 的 `run_tests()` 运行，前端测试通过 `tests/frontend/test_utils.py` 的 `run_frontend_test()` 运行
 
 ## 编码行为准则
 
 ### 先思考再编码
+
 - 不要假设，不要隐藏困惑，主动呈现权衡
+
 - 实现前明确陈述假设，不确定就问
+
 - 存在多种理解时，列出选项而非静默选择
+
 - 存在更简单的方案时主动说明，必要时提出异议
+
 - 遇到不明确的地方先停下来，指出困惑点再提问
 
 ### 简洁优先
+
 - 只实现被要求的功能，不添加额外特性
+
 - 单次使用的代码不做抽象
+
 - 不主动添加未被要求的"灵活性"或"可配置性"
+
 - 不为不可能发生的场景编写错误处理
+
 - 如果 50 行能解决，不要写 200 行
 
 ### 精准改动
+
 - 只修改必须改的部分，不顺手"改进"相邻代码、注释或格式
+
 - 不重构正常工作的代码
+
 - 匹配现有风格，即使自己会写得更不一样
+
 - 发现无关的废弃代码时提到即可，不主动删除
+
 - 自己的改动导致的废弃导入/变量/函数必须清理
+
 - 每一行改动都应能追溯到用户的需求
 
 ### 目标驱动
+
 - 将任务转化为可验证的目标：先写失败测试，再让测试通过
+
 - 多步骤任务先简述计划，每步说明验证方式
+
 - 强目标定义允许独立循环推进，弱目标需要反复确认
 
 ## 通用规则
 
 - 计划修改后端/前端原有功能（非新增功能）之前，必须先向用户说明改动内容和影响，经用户确认后再执行
+
 - 不要提前实现未来可能用到的方法
+
 - 修改接口时同步更新 `api/{模块}.md` 文档
+
 - 修改数据库表时同步更新 `database/{模块}.md` 文档
+
 - 不写注释（除非明确要求）
+

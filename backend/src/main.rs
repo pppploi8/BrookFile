@@ -3,6 +3,8 @@ mod database;
 mod handlers;
 mod models;
 mod app_state;
+mod ebook;
+mod ebook_metadata;
 mod routes;
 mod middleware;
 mod error_logger;
@@ -203,6 +205,9 @@ async fn main() -> std::io::Result<()> {
     let restore_manager = Arc::new(RestoreManager::new());
     println!("RestoreManager initialized");
 
+    let ebook_scan_manager = Arc::new(ebook::EbookScanManager::new());
+    println!("EbookScanManager initialized");
+
     let app_state = web::Data::new(app_state::AppState::new(
         database.pool.clone(),
         Arc::clone(&session_manager),
@@ -210,6 +215,7 @@ async fn main() -> std::io::Result<()> {
         Arc::clone(&backup_scheduler),
         Arc::clone(&restore_manager),
         fulltext_enabled,
+        Arc::clone(&ebook_scan_manager),
     ));
     println!("AppState initialized");
 

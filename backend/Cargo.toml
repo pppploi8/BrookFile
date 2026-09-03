@@ -46,6 +46,10 @@ jieba-rs = "0.7"
 rust-embed = "8"
 md-5 = "0.10"
 quick-xml = "0.37"
+chardetng = "0.1"
+encoding_rs = "0.8"
+regex = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [[bin]]
 name = "backend"

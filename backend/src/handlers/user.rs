@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::path::{Path, PathBuf};
 use std::fs;
 use crate::app_state::AppState;
-use crate::handlers::{ApiResponse, internal_error_response, get_current_user_id, check_admin, is_safe_name, is_recycle_bin_path_under_root};
+use crate::handlers::{ApiResponse, internal_error_response, get_current_user_id, check_admin, is_safe_name, is_recycle_bin_path_under_root, get_user_root_path, is_safe_path, is_path_under_root};
 use crate::middleware::get_session_id;
 use crate::models::UserInfo;
 use crate::error_logger;
@@ -749,7 +749,7 @@ pub async fn update_feature_order(
         Err(response) => return response,
     };
 
-    let valid_features = ["file", "note", "password"];
+    let valid_features = compute_valid_features(&app_state, &user_id);
     let features: Vec<&str> = req.feature_order.split(',').map(|s| s.trim()).collect();
 
     if features.len() != valid_features.len() {
@@ -781,5 +781,91 @@ pub async fn update_feature_order(
         Err(e) => {
             internal_error_response("/api/user/update_feature_order", &e)
         }
+    }
+}
+
+/// 计算当前用户允许的功能排序集合。
+/// 电子书功能仅在用户已设置电子书存储目录（ebook_path 非空）时才作为可排序项。
+fn compute_valid_features(app_state: &web::Data<AppState>, user_id: &str) -> Vec<&'static str> {
+    let mut features: Vec<&'static str> = vec!["file", "note", "password"];
+    if let Ok(Some(user)) = app_state.user_model.get_user_full(user_id) {
+        if user.ebook_path.is_some() {
+            features.push("ebook");
+        }
+    }
+    features
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetEbookPathRequest {
+    ebook_path: String,
+}
+
+pub async fn set_ebook_path(
+    req: web::Json<SetEbookPathRequest>,
+    http_req: HttpRequest,
+    app_state: web::Data<AppState>,
+) -> impl Responder {
+    let user_id = match get_current_user_id(&http_req, &app_state) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+
+    // 该路径与浏览接口一致，是相对于用户 root_path 的相对路径（如 "mybooks" 或 "mybooks/sub"），
+    // 需拼接 root_path 后再做存在性/目录校验，不能直接当作绝对路径或相对于后端工作目录的路径。
+    let root_path = match get_user_root_path(&http_req, &app_state) {
+        Ok(path) => path,
+        Err(response) => return response,
+    };
+    let root_path_obj = Path::new(&root_path);
+
+    let trimmed = req.ebook_path.trim().trim_start_matches('/').to_string();
+    let ebook_path: Option<String> = if trimmed.is_empty() {
+        None
+    } else {
+        if !is_safe_path(&trimmed) {
+            return HttpResponse::Ok().json(ApiResponse {
+                success: false,
+                fail_code: Some("PATH_INVALID".to_string()),
+            });
+        }
+        let target = root_path_obj.join(trimmed.as_str());
+        if !is_path_under_root(&target, root_path_obj) || !target.exists() || !target.is_dir() {
+            return HttpResponse::Ok().json(ApiResponse {
+                success: false,
+                fail_code: Some("PATH_INVALID".to_string()),
+            });
+        }
+        // 电子书元数据数据库检测 / 初始化：
+        // - 缺失则自动初始化（空目录保存后生成元数据库）
+        // - 已存在且合法则直接复用
+        // - 损坏或 schema 不匹配则拒绝启用，交由用户删除文件或更换路径
+        match crate::ebook_metadata::check_ebook_metadata_db(root_path_obj, &trimmed) {
+            Ok(crate::ebook_metadata::EbookDbStatus::Ok) => {}
+            Ok(crate::ebook_metadata::EbookDbStatus::Missing) => {
+                if let Err(_) = crate::ebook_metadata::init_ebook_metadata_db(root_path_obj, &trimmed) {
+                    return HttpResponse::Ok().json(ApiResponse {
+                        success: false,
+                        fail_code: Some("EBOOK_DB_INIT_FAILED".to_string()),
+                    });
+                }
+            }
+            Ok(_) => {
+                return HttpResponse::Ok().json(ApiResponse {
+                    success: false,
+                    fail_code: Some("EBOOK_DB_INVALID".to_string()),
+                });
+            }
+            Err(e) => return internal_error_response("/api/user/set_ebook_path", &e),
+        }
+        Some(trimmed.clone())
+    };
+
+    match app_state.user_model.update_ebook_path(&user_id, ebook_path.as_deref()) {
+        Ok(_) => HttpResponse::Ok().json(ApiResponse {
+            success: true,
+            fail_code: None,
+        }),
+        Err(e) => internal_error_response("/api/user/set_ebook_path", &e),
     }
 }

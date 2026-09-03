@@ -67,6 +67,24 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  function setEbookEnabled(enabled: boolean) {
+    if (user.value) {
+      user.value = { ...user.value, ebook_enabled: enabled }
+    }
+  }
+
+  function setEbookPath(path: string) {
+    if (user.value) {
+      user.value = { ...user.value, ebook_path: path || undefined }
+    }
+  }
+
+  function setEbookDbStatus(status: string) {
+    if (user.value) {
+      user.value = { ...user.value, ebook_db_status: status }
+    }
+  }
+
   return {
     user,
     loggedIn,
@@ -82,6 +100,9 @@ export const useUserStore = defineStore('user', () => {
     setAvatar,
     setFeatureOrder,
     setHasShares,
+    setEbookEnabled,
+    setEbookPath,
+    setEbookDbStatus,
     loadSystemLogo,
   }
 })

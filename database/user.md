@@ -15,3 +15,4 @@
 | feature_order | TEXT | DEFAULT 'file,photo,music,video,book,note,password' | 功能排序，逗号分隔 |
 | created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
+| ebook_path | TEXT | NULL | 电子书数据存储目录（相对/绝对路径），用于存放电子书元数据；非空即表示已启用电子书模块 |

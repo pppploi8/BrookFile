@@ -22,6 +22,7 @@ BACKEND_TESTS = [
     'test_backup_restore_error.py',
     'test_webdav_api.py',
     'test_webdav_protocol.py',
+    'test_ebook_api.py',
 ]
 
 FRONTEND_TESTS = [

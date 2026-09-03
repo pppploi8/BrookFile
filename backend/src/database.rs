@@ -2,7 +2,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 
 pub type Pool = r2d2::Pool<SqliteConnectionManager>;
 
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 5;
 
 pub struct Database {
     pub pool: Pool,
@@ -60,7 +60,8 @@ impl Database {
                 remark TEXT,
                 feature_order TEXT DEFAULT 'file,note,password',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ebook_path TEXT
             )",
             [],
         )?;
@@ -316,6 +317,10 @@ impl Database {
             )?;
             conn.execute("CREATE INDEX idx_sessions_user_id ON sessions(user_id)", [])?;
             conn.execute("CREATE INDEX idx_sessions_last_access ON sessions(last_access_time)", [])?;
+        }
+
+        if from < 5 {
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN ebook_path TEXT", []);
         }
 
         Ok(())

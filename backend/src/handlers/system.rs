@@ -23,6 +23,9 @@ pub struct UserInfoResponse {
     pub feature_order: String,
     pub recycle_bin_enabled: bool,
     pub has_shares: bool,
+    pub ebook_path: Option<String>,
+    pub ebook_enabled: bool,
+    pub ebook_db_status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,6 +67,23 @@ pub async fn get_system_info(
             match app_state.user_model.get_user_by_username(uname) {
                 Ok(Some(user_info)) => {
                     let has_shares = app_state.share_model.has_shares_by_user(&user_info.id).unwrap_or(false);
+
+                    // 电子书元数据数据库状态检测：重复打开时校验库是否合法，
+                    // 不合法则拒绝启用（ebook_enabled=false），由用户在个人中心删除文件或换目录。
+                    let ebook_db_status = match (&user_info.root_path, &user_info.ebook_path) {
+                        (Some(rp), Some(ep)) => {
+                            match crate::ebook_metadata::check_ebook_metadata_db(std::path::Path::new(rp), ep) {
+                                Ok(crate::ebook_metadata::EbookDbStatus::Ok) => "ok".to_string(),
+                                Ok(crate::ebook_metadata::EbookDbStatus::Missing) => "missing".to_string(),
+                                Ok(crate::ebook_metadata::EbookDbStatus::Corrupt) => "corrupt".to_string(),
+                                Ok(crate::ebook_metadata::EbookDbStatus::SchemaMismatch) => "schema_mismatch".to_string(),
+                                Err(_) => "corrupt".to_string(),
+                            }
+                        }
+                        _ => "missing".to_string(),
+                    };
+                    let ebook_enabled = user_info.ebook_path.is_some() && ebook_db_status == "ok";
+
                     Some(UserInfoResponse {
                         id: user_info.id,
                         username: user_info.username,
@@ -71,6 +91,9 @@ pub async fn get_system_info(
                         feature_order: user_info.feature_order,
                         recycle_bin_enabled: user_info.recycle_bin_path.is_some(),
                         has_shares,
+                        ebook_path: user_info.ebook_path.clone(),
+                        ebook_enabled,
+                        ebook_db_status,
                     })
                 }
                 _ => None,

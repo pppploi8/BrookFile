@@ -149,6 +149,48 @@
           </div>
         </el-tab-pane>
 
+        <el-tab-pane :label="t('home.categories.ebooks')" name="ebook">
+          <div class="tab-content">
+            <div class="ebook-setting">
+              <el-form label-position="top">
+                <el-form-item :label="t('profile.ebookStoragePath')">
+                  <FolderSelect v-model="ebookPath" :placeholder="t('profile.ebookStoragePathPlaceholder')" />
+                </el-form-item>
+              </el-form>
+              <div class="ebook-actions">
+                <el-button type="primary" :loading="ebookSaving" @click="saveEbookPath">
+                  {{ hasEbookPath ? t('profile.ebookUpdate') : t('profile.ebookEnable') }}
+                </el-button>
+                <el-button v-if="hasEbookPath" type="danger" :loading="ebookSaving" @click="clearEbookPath">
+                  {{ t('profile.ebookDisable') }}
+                </el-button>
+              </div>
+              <el-alert
+                v-if="!hasEbookPath"
+                type="info"
+                :closable="false"
+                :title="t('profile.ebookDisabledTip')"
+                class="ebook-alert"
+              />
+              <el-alert
+                v-else-if="ebookDbStatus === 'ok'"
+                type="success"
+                :closable="false"
+                :title="t('profile.ebookEnabledTip')"
+                class="ebook-alert"
+              />
+              <el-alert
+                v-else
+                type="error"
+                :closable="false"
+                :title="t('profile.ebookDbInvalidTitle')"
+                :description="t('profile.ebookDbInvalidTip')"
+                class="ebook-alert"
+              />
+            </div>
+          </div>
+        </el-tab-pane>
+
         <el-tab-pane :label="t('profile.cloudBackup')" name="backup" style="height: 100%">
           <div class="tab-content backup-content">
             <div class="backup-toolbar">
@@ -471,12 +513,12 @@ import { ref, reactive, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from '@/utils/message'
 import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh, Edit, Document, Delete, EditPen, Key, Link } from '@element-plus/icons-vue'
+import { Plus, Refresh, Edit, Document, Delete, EditPen, Key, Link, Reading } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import BackupLogDrawer from '@/components/BackupLogDrawer.vue'
 import RestoreDrawer from '@/components/RestoreDrawer.vue'
 import FolderSelect from '@/components/FolderSelect.vue'
-import { uploadAvatar, fetchAvatar, deleteAvatar, changePassword, listBackupRules, getBackupRule, createBackupRule, updateBackupRule, deleteBackupRule, updateFeatureOrder, listWebDavConfigs, createWebDavConfig, updateWebDavConfig, deleteWebDavConfig, listWebDavCors, saveWebDavCors, listSessions, updateSessionName, revokeSession } from '@/api/system'
+import { uploadAvatar, fetchAvatar, deleteAvatar, changePassword, listBackupRules, getBackupRule, createBackupRule, updateBackupRule, deleteBackupRule, updateFeatureOrder, setEbookPath, listWebDavConfigs, createWebDavConfig, updateWebDavConfig, deleteWebDavConfig, listWebDavCors, saveWebDavCors, listSessions, updateSessionName, revokeSession } from '@/api/system'
 import type { SessionInfo } from '@/api/system'
 import router from '@/router'
 
@@ -499,25 +541,32 @@ const handleResize = () => {
 }
 
 // 功能排序相关
-const allFeatures = [
-  { key: 'file', label: computed(() => t('home.categories.files')), icon: Document },
-  { key: 'note', label: computed(() => t('home.categories.notes')), icon: EditPen },
-  { key: 'password', label: computed(() => t('home.categories.passwords')), icon: Key },
-]
+// 电子书功能按需显示：仅当用户已启用电子书（ebook_enabled 为真）时才作为可排序项
+const allFeatures = computed(() => {
+  const list = [
+    { key: 'file', label: computed(() => t('home.categories.files')), icon: Document },
+    { key: 'note', label: computed(() => t('home.categories.notes')), icon: EditPen },
+    { key: 'password', label: computed(() => t('home.categories.passwords')), icon: Key },
+  ]
+  if (userStore.user?.ebook_enabled) {
+    list.push({ key: 'ebook', label: computed(() => t('home.categories.ebooks')), icon: Reading })
+  }
+  return list
+})
 
 const featureOrder = ref<string[]>([])
 const dragIndex = ref<number | null>(null)
 
 const featureItems = computed(() => {
   return featureOrder.value.map(key => {
-    const item = allFeatures.find(f => f.key === key)
+    const item = allFeatures.value.find(f => f.key === key)
     return item ? { ...item, label: item.label.value } : null
   }).filter((item): item is NonNullable<typeof item> => item !== null)
 })
 
 const initFeatureOrder = () => {
   const savedOrder = userStore.user?.feature_order
-  const validKeys = allFeatures.map(f => f.key)
+  const validKeys = allFeatures.value.map(f => f.key)
   if (savedOrder) {
     const savedKeys = savedOrder.split(',').filter(key => validKeys.includes(key))
     validKeys.forEach(key => {
@@ -527,9 +576,24 @@ const initFeatureOrder = () => {
     })
     featureOrder.value = savedKeys
   } else {
-    featureOrder.value = allFeatures.map(f => f.key)
+    featureOrder.value = allFeatures.value.map(f => f.key)
   }
 }
+
+// 启用/关闭电子书时，功能排序需同步增删 ebook 项：
+// 保留用户已调整的排序，移除不再可用的项，新增可用但未列出的项（追加到末尾）。
+// 否则 featureOrder 只在挂载时初始化一次，启用后需刷新页面才会出现电子书排序项。
+watch(
+  () => userStore.user?.ebook_enabled,
+  () => {
+    const validKeys = allFeatures.value.map(f => f.key)
+    const current = featureOrder.value.filter(key => validKeys.includes(key))
+    validKeys.forEach(key => {
+      if (!current.includes(key)) current.push(key)
+    })
+    featureOrder.value = current
+  }
+)
 
 const handleDragStart = (index: number, event: DragEvent) => {
   dragIndex.value = index
@@ -564,6 +628,56 @@ const handleDrop = async (index: number, event: DragEvent) => {
 
 const handleDragEnd = () => {
   dragIndex.value = null
+}
+
+// 电子书数据存储目录设置
+const ebookPath = ref(userStore.user?.ebook_path || '')
+const ebookSaving = ref(false)
+const hasEbookPath = computed(() => !!userStore.user?.ebook_path)
+const ebookDbStatus = computed(() => userStore.user?.ebook_db_status || '')
+
+const saveEbookPath = async () => {
+  if (!ebookPath.value.trim()) {
+    ElMessage.error({ __key: 'profile.ebookPathRequired' })
+    return
+  }
+  ebookSaving.value = true
+  try {
+    const res = await setEbookPath(ebookPath.value.trim())
+    if (res.success) {
+      userStore.setEbookEnabled(true)
+      userStore.setEbookPath(ebookPath.value.trim())
+      userStore.setEbookDbStatus('ok')
+      ElMessage.success({ __key: 'profile.ebookEnabledSuccess' })
+    }
+  } catch {
+    // 失败提示由请求层统一处理
+  } finally {
+    ebookSaving.value = false
+  }
+}
+
+const clearEbookPath = async () => {
+  try {
+    await ElMessageBox.confirm(t('profile.ebookDisableConfirm'), t('common.confirm'), { type: 'warning' })
+  } catch {
+    return
+  }
+  ebookSaving.value = true
+  try {
+    const res = await setEbookPath('')
+    if (res.success) {
+      userStore.setEbookEnabled(false)
+      userStore.setEbookPath('')
+      userStore.setEbookDbStatus('missing')
+      ebookPath.value = ''
+      ElMessage.success({ __key: 'profile.ebookDisabledSuccess' })
+    }
+  } catch {
+    // 失败提示由请求层统一处理
+  } finally {
+    ebookSaving.value = false
+  }
 }
 
 const weekDays = computed(() => [
@@ -1405,6 +1519,21 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 500;
   color: var(--el-text-color-primary);
+}
+
+/* 电子书设置 */
+.ebook-setting {
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.ebook-actions {
+  display: flex;
+  margin-bottom: 20px;
+}
+
+.ebook-alert {
+  border-radius: 8px;
 }
 
 /* 移动端适配 */

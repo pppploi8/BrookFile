@@ -21,11 +21,46 @@ def flatten_keys(obj, prefix=''):
 def parse_ts_file(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
-    content = re.sub(r'//.*$', '', content, flags=re.MULTILINE)
-    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    content = _strip_comments(content)
     start = content.index('{', content.index('export default'))
     obj = _parse_object(content, start)[0]
     return flatten_keys(obj)
+
+def _strip_comments(content):
+    result = []
+    i = 0
+    n = len(content)
+    while i < n:
+        ch = content[i]
+        if ch in ("'", '"'):
+            quote = ch
+            result.append(ch)
+            i += 1
+            while i < n:
+                if content[i] == '\\' and i + 1 < n:
+                    result.append(content[i])
+                    result.append(content[i + 1])
+                    i += 2
+                    continue
+                result.append(content[i])
+                if content[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch == '/' and i + 1 < n and content[i + 1] == '/':
+            while i < n and content[i] != '\n':
+                i += 1
+            continue
+        if ch == '/' and i + 1 < n and content[i + 1] == '*':
+            i += 2
+            while i < n - 1 and not (content[i] == '*' and content[i + 1] == '/'):
+                i += 1
+            i += 2
+            continue
+        result.append(ch)
+        i += 1
+    return ''.join(result)
 
 def _parse_object(content, pos):
     pos = _skip_ws(content, pos)

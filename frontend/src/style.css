@@ -34,6 +34,15 @@ body {
   margin-right: 5px;
 }
 
+.el-button .el-icon:last-child,
+.el-link .el-icon:last-child {
+  margin-right: 0;
+}
+
+.epub-container {
+  overflow-x: hidden !important;
+}
+
 .el-drawer__body {
   padding: 0 20px;
 }

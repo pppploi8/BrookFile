@@ -253,6 +253,7 @@ import {
   More,
   Share,
   Delete,
+  Reading,
 } from '@element-plus/icons-vue'
 import { logout, fetchAvatar } from '@/api'
 import { useUserStore } from '@/stores/user'
@@ -324,6 +325,11 @@ const menuItems = computed(() => {
     { key: 'note', path: '/notes', label: t('home.categories.notes'), icon: EditPen, fixed: false },
     { key: 'password', path: '/passwords', label: t('home.categories.passwords'), icon: Key, fixed: false },
   ]
+
+  // 电子书模块按需显示：仅当用户已设置电子书数据存储目录（ebook_enabled 为真）时加入菜单
+  if (userStore.user?.ebook_enabled) {
+    allItems.push({ key: 'ebook', path: '/ebooks', label: t('home.categories.ebooks'), icon: Reading, fixed: false })
+  }
 
   const featureOrder = userStore.user?.feature_order
   if (featureOrder) {

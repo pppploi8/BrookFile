@@ -25,6 +25,20 @@ interface ViewportSize {
   h: number
 }
 
+// 双指缩放结束后的滚动锚定参数（见 applyAnchoredScroll）。
+interface PinchAnchor {
+  r: number // 最终缩放比例（z1 / 手势起点 zoom）
+  si: number // 锚点所在 spread
+  oy: number // 锚点在 spread 内的纵向偏移（缩放前）
+  ox: number // 锚点在页内的横向偏移（缩放前）
+  pageK: number // 锚点所在页在 spread 内的序号
+  relx0: number // 锚点相对首页左缘的横向偏移（兜底用）
+  mx: number // 手势结束时中点的视口坐标
+  my: number
+  padTop: number // contentEl 相对滚动内容原点的偏移（视口 padding）
+  padLeft: number
+}
+
 // PDF 渲染引擎：基于 pdfjs-dist。
 // 支持两种翻页模式（滚动 / 翻页）与两种版面（单页 / 双页对开），
 // 仅实现 pdf 的渲染，其余格式由各自的引擎实现，外壳保持不变。
@@ -80,6 +94,28 @@ export class PdfEngine implements ReaderEngine {
   private scrollRaf = 0
   private destroyed = false
 
+  // ---- 触摸手势（移动端）：双指缩放 + 放大后单指横向平移 ----
+  // touch-action: pan-y 保留原生纵向滚动，横向与双指手势交给这里处理。
+  private touchPinch: {
+    zoom0: number
+    dist0: number
+    ax: number // 锚点：手势起点中点在 contentEl 本地坐标系的位置
+    ay: number
+    m0x: number // 手势起点中点（相对 scrollEl 可视区左上角）
+    m0y: number
+    k: number // 当前缩放比例（相对 zoom0，已按上下限收敛）
+    mex: number // 最近一次中点位置
+    mey: number
+    si: number
+    oy: number
+    ox: number
+    pageK: number
+    relx0: number
+    padTop: number
+    padLeft: number
+  } | null = null
+  private touchPan: { startX: number; startY: number; startScrollLeft: number; active: boolean; decided: boolean } | null = null
+
   constructor(opts: EngineOptions) {
     this.opts = opts
     this.actions = [
@@ -92,6 +128,12 @@ export class PdfEngine implements ReaderEngine {
   async mount(container: HTMLElement): Promise<void> {
     this.scrollEl = container
     container.addEventListener('scroll', this.onScroll, { passive: true })
+    // pan-y：纵向滚动交给浏览器，横向平移与双指缩放由触摸手势处理
+    container.style.touchAction = 'pan-y'
+    container.addEventListener('touchstart', this.onTouchStart, { passive: true })
+    container.addEventListener('touchmove', this.onTouchMove, { passive: false })
+    container.addEventListener('touchend', this.onTouchEnd, { passive: true })
+    container.addEventListener('touchcancel', this.onTouchEnd, { passive: true })
     this.enableResizeObserver()
     this.contentEl = document.createElement('div')
     this.contentEl.className = 'pdf-content'
@@ -325,6 +367,10 @@ export class PdfEngine implements ReaderEngine {
       return { w: v.width, h: v.height }
     })
     const scale = this.computeScale(bases)
+    // 页组宽于容器时左对齐：flex 居中溢出的起始部分不可滚动到达，左对齐后才能横向平移到
+    const groupW = bases.reduce((s, b) => s + b.w * scale, 0) + SPREAD_GAP * Math.max(0, pages.length - 1)
+    const contentW = (this.scrollEl?.clientWidth || 800) - VIEWPORT_PAD * 2
+    el.style.justifyContent = groupW > contentW + 1 ? 'flex-start' : 'center'
     const dpr = window.devicePixelRatio || 1
     for (let k = 0; k < spread.length; k++) {
       const pg = pages[k]!
@@ -642,15 +688,201 @@ export class PdfEngine implements ReaderEngine {
     this.state.canNext = this.currentSpread < last
   }
 
-  private setZoom(z: number): void {
+  private setZoom(z: number, anchor?: PinchAnchor): void {
     this.zoom = Math.min(3, Math.max(0.3, z))
     this.resetDistantSpreads()
     this.rerenderVisible()
     // 缩放改变了未渲染 spread 的预期高度，同步刷新占位高度
     this.setPlaceholders()
-    requestAnimationFrame(() => {
-      if (this.turnMode === 'scroll') this.scrollToSpread(this.currentSpread, false)
+    if (anchor) {
+      this.applyAnchoredScroll(anchor)
+    } else {
+      requestAnimationFrame(() => {
+        if (this.turnMode === 'scroll') this.scrollToSpread(this.currentSpread, false)
+      })
+    }
+  }
+
+  // ---- 触摸手势（移动端） ----
+
+  private onTouchStart = (e: TouchEvent): void => {
+    if (this.destroyed || !this.scrollEl || !this.contentEl) return
+    // 双指变成其它数量时结束进行中的缩放手势
+    if (this.touchPinch && e.touches.length !== 2) this.finishPinch()
+    if (e.touches.length === 2) {
+      const [a, b] = [e.touches[0]!, e.touches[1]!]
+      this.contentEl.style.transform = ''
+      this.contentEl.style.transformOrigin = ''
+      const sc = this.scrollEl.getBoundingClientRect()
+      const cc = this.contentEl.getBoundingClientRect()
+      const mx = (a.clientX + b.clientX) / 2
+      const my = (a.clientY + b.clientY) / 2
+      const ax = mx - cc.left
+      const ay = my - cc.top
+      // 锚点所在 spread / 页及其内偏移
+      let si = this.currentSpread
+      for (let i = 0; i < this.spreadEls.length; i++) {
+        const el = this.spreadEls[i]!
+        const top = this.spreadTop(el)
+        if (ay >= top && ay < top + el.offsetHeight) {
+          si = i
+          break
+        }
+      }
+      const spreadEl = this.spreadEls[si]
+      const pages = spreadEl ? [...spreadEl.querySelectorAll<HTMLElement>('.pdf-page')] : []
+      let pageK = 0
+      if (pages.length > 0) {
+        for (let k = 0; k < pages.length; k++) {
+          const x = pages[k]!.offsetLeft - this.contentEl.offsetLeft
+          if (ax >= x && ax < x + pages[k]!.offsetWidth) {
+            pageK = k
+            break
+          }
+        }
+      }
+      const px = pages[pageK] ? pages[pageK]!.offsetLeft - this.contentEl.offsetLeft : 0
+      const px0 = pages[0] ? pages[0].offsetLeft - this.contentEl.offsetLeft : 0
+      this.touchPinch = {
+        zoom0: this.zoom,
+        dist0: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
+        ax,
+        ay,
+        m0x: mx - sc.left,
+        m0y: my - sc.top,
+        k: 1,
+        mex: mx - sc.left,
+        mey: my - sc.top,
+        si,
+        oy: spreadEl ? ay - this.spreadTop(spreadEl) : ay,
+        ox: ax - px,
+        pageK,
+        relx0: ax - px0,
+        padTop: cc.top - sc.top + this.scrollEl.scrollTop,
+        padLeft: cc.left - sc.left + this.scrollEl.scrollLeft,
+      }
+      this.touchPan = null
+    } else if (e.touches.length === 1 && !this.touchPinch) {
+      const t0 = e.touches[0]!
+      this.touchPan = {
+        startX: t0.clientX,
+        startY: t0.clientY,
+        startScrollLeft: this.scrollEl.scrollLeft,
+        active: false,
+        decided: false,
+      }
+    }
+  }
+
+  private onTouchMove = (e: TouchEvent): void => {
+    if (this.destroyed || !this.scrollEl || !this.contentEl) return
+    if (this.touchPinch && e.touches.length === 2) {
+      e.preventDefault()
+      const [a, b] = [e.touches[0]!, e.touches[1]!]
+      const sc = this.scrollEl.getBoundingClientRect()
+      const p = this.touchPinch
+      const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+      const z1 = Math.min(3, Math.max(0.3, p.zoom0 * (dist / p.dist0)))
+      p.k = z1 / p.zoom0
+      p.mex = (a.clientX + b.clientX) / 2 - sc.left
+      p.mey = (a.clientY + b.clientY) / 2 - sc.top
+      // 手势期间用 transform 即时反馈（锚点跟随双指中点），结束后按新 zoom 重渲染
+      this.contentEl.style.transformOrigin = `${p.ax}px ${p.ay}px`
+      this.contentEl.style.transform = `translate(${p.mex - p.m0x}px, ${p.mey - p.m0y}px) scale(${p.k})`
+      return
+    }
+    const pan = this.touchPan
+    if (pan && !this.touchPinch && e.touches.length === 1) {
+      const t = e.touches[0]!
+      const dx = t.clientX - pan.startX
+      const dy = t.clientY - pan.startY
+      const overflowX = this.scrollEl.scrollWidth - this.scrollEl.clientWidth > 1
+      if (!pan.decided) {
+        // 横向占优且存在横向溢出时才接管控拽，否则让浏览器纵向滚动
+        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2 && overflowX) {
+          pan.active = true
+          pan.decided = true
+        } else if (Math.abs(dy) > 8) {
+          pan.decided = true
+        }
+      }
+      if (pan.active) {
+        e.preventDefault()
+        this.scrollEl.scrollLeft = pan.startScrollLeft - dx
+      }
+    }
+  }
+
+  private onTouchEnd = (e: TouchEvent): void => {
+    if (this.destroyed) return
+    if (this.touchPinch && e.touches.length < 2) {
+      this.finishPinch()
+      this.touchPan = null
+      return
+    }
+    if (e.touches.length === 0) {
+      this.touchPan = null
+    }
+  }
+
+  private finishPinch(): void {
+    const p = this.touchPinch
+    this.touchPinch = null
+    if (!p || !this.contentEl || !this.scrollEl) return
+    this.contentEl.style.transform = ''
+    this.contentEl.style.transformOrigin = ''
+    const z1 = Math.min(3, Math.max(0.3, p.zoom0 * p.k))
+    this.setZoom(z1, {
+      r: z1 / p.zoom0,
+      si: p.si,
+      oy: p.oy,
+      ox: p.ox,
+      pageK: p.pageK,
+      relx0: p.relx0,
+      mx: p.mex,
+      my: p.mey,
+      padTop: p.padTop,
+      padLeft: p.padLeft,
     })
+  }
+
+  // 双指缩放结束后按锚点恢复滚动位置：锚点内容坐标随页面等比缩放（ox/oy 按比例），
+  // spread 间距与视口 padding 不变；等可见 spread 重渲染完成后再测量实际 offset 设置滚动，
+  // 避免渲染中途高度未稳定导致滚动被钳制在旧范围。
+  private applyAnchoredScroll(anchor: PinchAnchor): void {
+    const deadline = Date.now() + 10000
+    const tryApply = (): void => {
+      if (this.destroyed || !this.scrollEl || !this.contentEl) return
+      const top = this.scrollEl.scrollTop - 400
+      const bottom = this.scrollEl.scrollTop + this.scrollEl.clientHeight + 400
+      const allRendered = this.spreadEls.every((el) => {
+        if (!el || el.style.display === 'none') return true
+        const off = this.spreadTop(el)
+        const h = el.offsetHeight
+        if (off + h >= top && off <= bottom) return !!el.querySelector('.pdf-page')
+        return true
+      })
+      if (!allRendered && Date.now() < deadline) {
+        requestAnimationFrame(tryApply)
+        return
+      }
+      const el = this.spreadEls[anchor.si]
+      if (el) {
+        const ay = this.spreadTop(el) + anchor.oy * anchor.r
+        const pages = [...el.querySelectorAll<HTMLElement>('.pdf-page')]
+        const pk = pages[anchor.pageK]
+        const ax = pk
+          ? pk.offsetLeft - this.contentEl.offsetLeft + anchor.ox * anchor.r
+          : pages[0]
+            ? pages[0].offsetLeft - this.contentEl.offsetLeft + anchor.relx0 * anchor.r
+            : anchor.ox * anchor.r
+        const maxY = Math.max(0, this.scrollEl.scrollHeight - this.scrollEl.clientHeight)
+        const maxX = Math.max(0, this.scrollEl.scrollWidth - this.scrollEl.clientWidth)
+        this.scrollEl.scrollTop = Math.min(maxY, Math.max(0, anchor.padTop + ay - anchor.my))
+        this.scrollEl.scrollLeft = Math.min(maxX, Math.max(0, anchor.padLeft + ax - anchor.mx))
+      }
+    }
+    requestAnimationFrame(tryApply)
   }
 
   private rerenderVisible(): void {
@@ -678,7 +910,14 @@ export class PdfEngine implements ReaderEngine {
       this.resizeObserver = null
     }
     if (this.resizeTimer) clearTimeout(this.resizeTimer)
-    if (this.scrollEl) this.scrollEl.removeEventListener('scroll', this.onScroll)
+    if (this.scrollEl) {
+      this.scrollEl.removeEventListener('scroll', this.onScroll)
+      this.scrollEl.removeEventListener('touchstart', this.onTouchStart)
+      this.scrollEl.removeEventListener('touchmove', this.onTouchMove)
+      this.scrollEl.removeEventListener('touchend', this.onTouchEnd)
+      this.scrollEl.removeEventListener('touchcancel', this.onTouchEnd)
+      this.scrollEl.style.touchAction = ''
+    }
     if (this.scrollRaf) cancelAnimationFrame(this.scrollRaf)
     if (this.pdfDoc) {
       void this.pdfDoc.destroy()

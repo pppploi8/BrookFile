@@ -206,15 +206,6 @@ impl SearchManager {
         result
     }
 
-    pub fn remove_note_index(&self, notebook_id: &str, note_path: &str) -> Result<(), String> {
-        if !self.enabled {
-            return Ok(());
-        }
-        let lock = self.get_notebook_lock(notebook_id);
-        let _guard = lock.lock().map_err(|e| e.to_string())?;
-        self.remove_note_index_locked(notebook_id, note_path)
-    }
-
     fn remove_note_index_locked(&self, notebook_id: &str, note_path: &str) -> Result<(), String> {
         if !self.enabled {
             return Ok(());

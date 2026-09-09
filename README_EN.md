@@ -9,27 +9,36 @@ A cloud storage system designed for personal/home users, an experimental project
 ### Core Features
 
 - **Cloud Storage Basics** - File upload, download, browsing, rename, move, copy, search, and compressed download
+
 - **Multi-Tenancy** - Supports multiple independent users with admin account management and complete data isolation
+
 - **File Sharing** - Share files or folders via links with optional password protection and expiration
+
 - **Recycle Bin** - Deleted files go to the recycle bin with support for restoration or permanent deletion
 
 ### Extended Features
 
 - **Encrypted Cloud Backup** - Secure file encryption and cloud backup
+
 - **Cloud Notes** - Convenient cloud-based note management with end-to-end encryption
+
 - **Password Manager** - End-to-end encrypted password storage and management
+
 - **WebDAV Support** - Standard WebDAV protocol support, compatible with various clients
+
 - **E-book Reader** - Online reading for TXT / EPUB / PDF: bookshelf management with custom categories, four reading layouts (single/double page × scroll/paginated), font/size/theme/line-spacing settings, free bookmarks with 3-slot automatic progress tracking, and IndexedDB local caching (no re-download after first open); TXT encoding auto-detection (GBK/GB18030, etc.) with streaming chapter indexing for 100MB+ files
 
 ## Roadmap
 
 - **Music Library** - Online music management and streaming playback
+
 - **Video Transcoding** - Online video transcoding and playback
+
 - **Photo Browser** - Photo browsing by time/content with fast search
 
 ## Deployment
 
-1. Download the appropriate version from [Release](../../releases) (currently only Windows/Linux x86_64 pre-built binaries are available)
+1. Download the appropriate version from [Release](../../releases) (currently only Windows/Linux x86\_64 pre-built binaries are available)
 2. Extract and run the executable
 3. Open `http://<IP>:3000` in your browser and follow the prompts to initialize the system
 
@@ -77,13 +86,13 @@ server {
 }
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `port` | integer | `3000` | Server listening port |
+| Option          | Type    | Default | Description                                                                                                                                                                                                                  |
+| --------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`          | integer | `3000`  | Server listening port                                                                                                                                                                                                        |
 | `trusted_proxy` | boolean | `false` | Whether to trust client IP headers (`X-Real-IP` / `X-Forwarded-For`) from a reverse proxy. Set to `true` when deployed behind Nginx or similar, otherwise the IP recorded for login devices will always be the proxy address |
-| `argon2.m_cost` | integer | `19456` | Argon2 memory cost (KB), affects memory usage for password hashing |
-| `argon2.t_cost` | integer | `2` | Argon2 iterations, affects password hashing computation time |
-| `argon2.p_cost` | integer | `1` | Argon2 parallelism, affects thread count for password hashing |
+| `argon2.m_cost` | integer | `19456` | Argon2 memory cost (KB), affects memory usage for password hashing                                                                                                                                                           |
+| `argon2.t_cost` | integer | `2`     | Argon2 iterations, affects password hashing computation time                                                                                                                                                                 |
+| `argon2.p_cost` | integer | `1`     | Argon2 parallelism, affects thread count for password hashing                                                                                                                                                                |
 
 > **Note**: The `argon2` parameters affect the hash strength of user login passwords and backup encryption passwords. Changes only apply to login passwords set and encrypted backups created after the modification; existing login passwords have their hash parameters embedded in the hash value, and existing backups record their KDF parameters in the backup's `.info` file — verification and restoration each read their own stored parameters, so after changing the config you can still log in and restore old backups normally, with no need to delete `database.db`. On low-performance devices (e.g., routers), you can reduce `m_cost` (e.g., `4096`) and `t_cost` (e.g., `1`) to decrease memory usage and login time, but this will reduce resistance to brute-force attacks.
 
@@ -91,38 +100,54 @@ server {
 
 After logging in as admin, the "Settings" menu allows online configuration of:
 
-| Setting | Takes Effect | Description |
-|---------|-------------|-------------|
-| System Name | Immediately | Displayed on login page, browser title, etc. |
-| System Logo | Immediately | Custom brand icon shown in sidebar and login page |
-| Session Timeout | After restart | How long before idle users are logged out (seconds) |
-| Notebook Fulltext Search | After restart | Disabling saves runtime memory; note search only matches titles |
-| Rebuild Notebook Index | Immediately | Manually trigger fulltext index rebuild for all non-encrypted notebooks |
+| Setting                  | Takes Effect  | Description                                                             |
+| ------------------------ | ------------- | ----------------------------------------------------------------------- |
+| System Name              | Immediately   | Displayed on login page, browser title, etc.                            |
+| System Logo              | Immediately   | Custom brand icon shown in sidebar and login page                       |
+| Session Timeout          | After restart | How long before idle users are logged out (seconds)                     |
+| Notebook Fulltext Search | After restart | Disabling saves runtime memory; note search only matches titles         |
+| Rebuild Notebook Index   | Immediately   | Manually trigger fulltext index rebuild for all non-encrypted notebooks |
 
 ## Development
 
 ### Tech Stack
 
 #### Backend
+
 - **Rust** - High-performance systems programming language
+
 - **Actix Web** - Powerful asynchronous web framework
+
 - **SQLite (rusqlite)** - Lightweight embedded database
+
 - **r2d2** - Database connection pool
+
 - **Serde** - Serialization/deserialization framework
+
 - **HMAC/SHA256** - Secure cryptographic algorithms
 
 #### Frontend
+
 - **Vue 3** - Progressive JavaScript framework
+
 - **TypeScript** - Type-safe JavaScript superset
+
 - **Vite** - Next-generation frontend build tool
+
 - **Element Plus** - Vue 3 UI component library
+
 - **Pinia** - Vue 3 state management
+
 - **Vue Router** - Official router
+
 - **Vue I18n** - Internationalization support
+
 - **Tailwind CSS** - Utility-first CSS framework
+
 - **Axios** - HTTP client
 
 #### Testing
+
 - **Python** - Automated API testing
 
 ### Project Structure
@@ -163,8 +188,11 @@ BrookFile/
 ### Quick Start
 
 #### Prerequisites
+
 - Rust 1.70+
+
 - Node.js 18+
+
 - Python 3.8+ (for testing)
 
 #### Start Backend
@@ -189,3 +217,4 @@ cd tests
 pip install -r requirements.txt
 python run_all.py
 ```
+

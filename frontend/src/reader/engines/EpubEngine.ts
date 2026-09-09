@@ -162,6 +162,7 @@ export class EpubEngine implements ReaderEngine {
     this.rendition = rendition
     this.applyThemes()
     rendition.on('relocated', this.onRelocated)
+    rendition.on('click', this.onRenditionTap)
     return rendition
   }
 
@@ -175,6 +176,7 @@ export class EpubEngine implements ReaderEngine {
     try {
       if (this.rendition) {
         this.rendition.off('relocated', this.onRelocated)
+        this.rendition.off('click', this.onRenditionTap)
         this.rendition.destroy()
         this.rendition = null
       }
@@ -322,6 +324,12 @@ export class EpubEngine implements ReaderEngine {
     this.applyLocation(location)
   }
 
+  // 正文渲染在 epubjs 的 iframe 内，点击不会冒泡到外壳的 viewport，
+  // 转发为容器上的 click 事件供 ReaderShell 的「全屏点击隐藏工具栏」使用
+  private onRenditionTap = (): void => {
+    this.container?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  }
+
   private applyLocation(location: Location): void {
     const start = location.start
     this.currentCfi = start.cfi
@@ -446,6 +454,7 @@ export class EpubEngine implements ReaderEngine {
     this.destroyed = true
     if (this.rendition) {
       this.rendition.off('relocated', this.onRelocated)
+      this.rendition.off('click', this.onRenditionTap)
       this.rendition.destroy()
       this.rendition = null
     }

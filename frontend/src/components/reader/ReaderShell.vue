@@ -30,6 +30,8 @@ const bookmarksOpen = ref(false)
 const settingsOpen = ref(false)
 const jumpInput = ref('')
 const isFs = ref(false)
+// 全屏模式下点击阅读区域隐藏/恢复顶部标题栏与底部进度栏
+const chromeHidden = ref(false)
 
 const state = computed(() => engine.value?.state)
 const actions = computed(() => engine.value?.actions ?? [])
@@ -129,6 +131,14 @@ onUnmounted(() => {
 
 function onFsChange(): void {
   isFs.value = !!document.fullscreenElement
+  if (!isFs.value) chromeHidden.value = false
+}
+// 点击阅读区域切换工具栏显隐（仅全屏模式；正在选取文本时不触发）
+function onViewportTap(): void {
+  if (!isFs.value) return
+  const sel = window.getSelection()
+  if (sel && sel.toString()) return
+  chromeHidden.value = !chromeHidden.value
 }
 function toggleFullscreen(): void {
   if (!document.fullscreenElement) rootEl.value?.requestFullscreen?.()
@@ -164,7 +174,7 @@ function onJump(): void {
 
 <template>
   <div class="reader-shell" ref="rootEl">
-    <div class="reader-toolbar">
+    <div v-show="!chromeHidden" class="reader-toolbar">
       <el-button text :icon="ArrowLeft" @click="emit('back')" />
       <span class="reader-title" :title="title">{{ title }}</span>
       <el-tag size="small" effect="plain" class="format-tag">{{ format.toUpperCase() }}</el-tag>
@@ -184,6 +194,7 @@ function onJump(): void {
         placement="bottom-end"
         :width="300"
         trigger="click"
+        :teleported="false"
         popper-class="reader-settings-popover"
       >
         <template #reference>
@@ -251,7 +262,7 @@ function onJump(): void {
         </div>
       </div>
 
-      <div class="reader-viewport" ref="viewport">
+      <div class="reader-viewport" ref="viewport" @click="onViewportTap">
         <div v-if="!state || state.loading" class="reader-center">
           <el-icon class="is-loading" :size="28"><Loading /></el-icon>
           <span class="center-text">{{ t('reader.loading') }}</span>
@@ -298,7 +309,7 @@ function onJump(): void {
       </div>
     </div>
 
-    <div class="reader-footer">
+    <div v-show="!chromeHidden" class="reader-footer">
       <el-button text :disabled="!state || !state.canPrev" @click="engine?.goPrev()">
         <el-icon><ArrowLeft /></el-icon>
       </el-button>

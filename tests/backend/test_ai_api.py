@@ -1,3 +1,7 @@
+import socket
+import threading
+import time
+
 import requests
 from test_utils import run_tests, BASE_URL
 
@@ -8,7 +12,10 @@ def test_ai_config(session, root_path):
     data = resp.json()
     assert data['success'] is True
     type_ids = {p['type_id'] for p in data['presets']}
-    assert {'openai_completions', 'openai_responses', 'deepseek', 'anthropic', 'gemini', 'ollama', 'custom'} <= type_ids
+    assert {'openai_completions', 'openai_responses', 'deepseek', 'anthropic', 'gemini', 'ollama'} <= type_ids
+    # 三个协议入口置顶；与 OpenAI (Chat Completions) 重复的 custom 已移除
+    assert [p['type_id'] for p in data['presets'][:3]] == ['openai_completions', 'openai_responses', 'anthropic']
+    assert 'custom' not in type_ids
     deepseek_preset = next(p for p in data['presets'] if p['type_id'] == 'deepseek')
     assert deepseek_preset['default_base_url'] == 'https://api.deepseek.com/v1/'
     assert deepseek_preset['requires_api_key'] is True
@@ -25,7 +32,7 @@ def test_ai_config(session, root_path):
 
     # --- create: invalid base_url ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/create', json={
-        'name': 'OpenAI', 'provider_type': 'custom',
+        'name': 'OpenAI', 'provider_type': 'openai_completions',
         'base_url': 'no-scheme.com', 'api_key': 'sk-test'
     })
     data = resp.json()
@@ -58,7 +65,7 @@ def test_ai_config(session, root_path):
 
     # --- create: invalid proxy ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/create', json={
-        'name': 'OpenAI', 'provider_type': 'custom',
+        'name': 'OpenAI', 'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1', 'api_key': 'sk-test',
         'proxy': 'socks5://127.0.0.1:1080'
     })
@@ -77,7 +84,7 @@ def test_ai_config(session, root_path):
 
     # --- atomic create: provider + models saved together ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/create', json={
-        'name': 'Atomic', 'provider_type': 'custom',
+        'name': 'Atomic', 'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1', 'api_key': 'sk-atomic',
         'proxy': 'http://127.0.0.1:8080',
         'models': [
@@ -91,7 +98,7 @@ def test_ai_config(session, root_path):
 
     # --- atomic create: duplicate within one call -> whole thing rolls back ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/create', json={
-        'name': 'AtomicDup', 'provider_type': 'custom',
+        'name': 'AtomicDup', 'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1', 'api_key': 'sk-atomic',
         'models': [
             {'model_id': 'dup'},
@@ -106,7 +113,7 @@ def test_ai_config(session, root_path):
     resp = session.post(f'{BASE_URL}/api/ai/provider/list')
     atomic = next(p for p in resp.json()['providers'] if p['id'] == atomic_id)
     assert atomic['name'] == 'Atomic'
-    assert atomic['provider_type'] == 'custom'
+    assert atomic['provider_type'] == 'openai_completions'
     assert atomic['proxy'] == 'http://127.0.0.1:8080'
     assert [m['model_id'] for m in atomic['models']] == ['model-a', 'model-b']
     assert all(p['name'] != 'AtomicDup' for p in resp.json()['providers'])
@@ -119,7 +126,7 @@ def test_ai_config(session, root_path):
 
     # --- fetch models: api_key 为空但提供 provider_id 时回退已存储密钥 ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/fetch_models', json={
-        'provider_type': 'custom',
+        'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1',
         'api_key': '',
         'provider_id': atomic_id
@@ -130,7 +137,7 @@ def test_ai_config(session, root_path):
 
     # --- fetch models: proxy 为空但有 provider_id 时回退已存储代理并实际使用（代理不可达 -> AI_MODEL_LIST_FAILED） ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/fetch_models', json={
-        'provider_type': 'custom',
+        'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1',
         'api_key': 'sk-test',
         'proxy': '',
@@ -140,7 +147,7 @@ def test_ai_config(session, root_path):
 
     # --- fetch models: 非法代理 ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/fetch_models', json={
-        'provider_type': 'custom',
+        'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1',
         'api_key': 'sk-test',
         'proxy': 'socks5://127.0.0.1:1080'
@@ -155,6 +162,37 @@ def test_ai_config(session, root_path):
     })
     assert resp.json()['fail_code'] == 'PROVIDER_TYPE_INVALID'
 
+    # --- fetch models: 上游挂死（accept 后永不回包）必须在超时内失败，不能永久挂住 ---
+    hang_srv = socket.socket()
+    hang_srv.bind(('127.0.0.1', 0))
+    hang_srv.listen(5)
+    hang_port = hang_srv.getsockname()[1]
+    held_conns = []
+
+    def _hold_connections():
+        while True:
+            try:
+                conn, _ = hang_srv.accept()
+            except OSError:
+                return
+            held_conns.append(conn)  # 保持连接、不回任何数据
+
+    threading.Thread(target=_hold_connections, daemon=True).start()
+    try:
+        started = time.time()
+        resp = session.post(f'{BASE_URL}/api/ai/provider/fetch_models', json={
+            'provider_type': 'openai_completions',
+            'base_url': f'http://127.0.0.1:{hang_port}/v1',
+            'api_key': 'sk-test',
+        }, timeout=90)
+        elapsed = time.time() - started
+        assert resp.json()['fail_code'] == 'AI_MODEL_LIST_FAILED'
+        assert elapsed < 60, f'模型列表请求未在超时内返回，耗时 {elapsed:.1f}s'
+    finally:
+        hang_srv.close()
+        for conn in held_conns:
+            conn.close()
+
     # --- update provider + 整体对账模型：改一个、删一个、加一个 ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/list')
     info = next(p for p in resp.json()['providers'] if p['id'] == atomic_id)
@@ -162,7 +200,7 @@ def test_ai_config(session, root_path):
     resp = session.post(f'{BASE_URL}/api/ai/provider/update', json={
         'id': atomic_id,
         'name': 'Atomic-Upd',
-        'provider_type': 'custom',
+        'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1',
         'api_key': '',
         'models': [
@@ -182,7 +220,7 @@ def test_ai_config(session, root_path):
     resp = session.post(f'{BASE_URL}/api/ai/provider/update', json={
         'id': atomic_id,
         'name': 'Atomic-Bad',
-        'provider_type': 'custom',
+        'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1',
         'models': [
             {'model_id': 'dup'},
@@ -198,7 +236,7 @@ def test_ai_config(session, root_path):
 
     # --- fetch models: unreachable provider -> AI_MODEL_LIST_FAILED ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/fetch_models', json={
-        'provider_type': 'custom',
+        'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1',
         'api_key': 'sk-test'
     })
@@ -208,7 +246,7 @@ def test_ai_config(session, root_path):
 
     # --- fetch models: empty api_key ---
     resp = session.post(f'{BASE_URL}/api/ai/provider/fetch_models', json={
-        'provider_type': 'custom',
+        'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1',
         'api_key': ''
     })
@@ -365,7 +403,7 @@ def test_ai_config(session, root_path):
     # (create provider + model for isolation check)
     resp = session.post(f'{BASE_URL}/api/ai/provider/create', json={
         'name': 'Isolation',
-        'provider_type': 'custom',
+        'provider_type': 'openai_completions',
         'base_url': 'http://127.0.0.1:9/v1',
         'api_key': 'k',
         'models': [{'model_id': 'm1'}]

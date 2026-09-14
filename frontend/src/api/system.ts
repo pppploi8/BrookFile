@@ -317,8 +317,13 @@ export interface UploadStartRequest {
   files: string[]
 }
 
-export async function uploadStart(files: string[]): Promise<UploadStartResponse> {
-  return request({ method: 'POST', url: '/file/upload_start', data: { files }, skipErrorMessage: true, rawResponse: true })
+export async function uploadStart(files: string[], signal?: AbortSignal): Promise<UploadStartResponse> {
+  return request({ method: 'POST', url: '/file/upload_start', data: { files }, skipErrorMessage: true, rawResponse: true, signal })
+}
+
+export interface UploadChunkResponse extends ApiResponse {
+  // 仅在 INVALID_OFFSET 时返回：服务端当前已写入的字节数，用于对齐偏移后续传
+  uploaded_bytes?: number
 }
 
 export async function uploadChunk(
@@ -327,7 +332,7 @@ export async function uploadChunk(
   chunk: Blob,
   onProgress?: (loaded: number, total: number) => void,
   signal?: AbortSignal
-): Promise<ApiResponse> {
+): Promise<UploadChunkResponse> {
   const formData = new FormData()
   formData.append('upload_id', uploadId)
   formData.append('offset', offset.toString())
@@ -349,8 +354,8 @@ export async function uploadChunk(
   })
 }
 
-export async function uploadComplete(uploadId: string): Promise<ApiResponse> {
-  return request({ method: 'POST', url: '/file/upload_complete', data: { upload_id: uploadId }, skipErrorMessage: true, rawResponse: true })
+export async function uploadComplete(uploadId: string, signal?: AbortSignal): Promise<ApiResponse> {
+  return request({ method: 'POST', url: '/file/upload_complete', data: { upload_id: uploadId }, skipErrorMessage: true, rawResponse: true, signal })
 }
 
 export async function uploadCancel(uploadId: string): Promise<ApiResponse> {
@@ -1534,7 +1539,8 @@ export interface AiChatStreamHandlers {
   onCompactStart?: (tokensBefore: number) => void
   onCompactEnd?: (ok: boolean) => void
   onDone?: (messageId: string) => void
-  onError?: (failCode: string) => void
+  /** detail 为上游返回的原始报错（如 HTTP 状态码与错误消息），拿不到时为空 */
+  onError?: (failCode: string, detail?: string) => void
 }
 
 export async function streamAiChatSend(
@@ -1605,7 +1611,7 @@ export async function streamAiChatSend(
       else if (event === 'compact_start') handlers.onCompactStart?.(data.tokens_before ?? 0)
       else if (event === 'compact_end') handlers.onCompactEnd?.(!!data.ok)
       else if (event === 'done') handlers.onDone?.(data.message_id ?? '')
-      else if (event === 'error') handlers.onError?.(data.fail_code ?? 'AI_CALL_FAILED')
+      else if (event === 'error') handlers.onError?.(data.fail_code ?? 'AI_CALL_FAILED', typeof data.detail === 'string' ? data.detail : undefined)
     }
   }
 }

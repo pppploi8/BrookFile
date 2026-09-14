@@ -1,6 +1,5 @@
 import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from '@/utils/message'
 import {
   createAiChat,
   deleteAiChat,
@@ -48,6 +47,9 @@ export function useAiChat(
   const compacting = ref(false)
   const compactNotice = ref('')
   const sending = ref(false)
+  const sendError = ref('')
+  /** 上游返回的原始报错（如「HTTP 401 Unauthorized: Invalid token」），无则为空 */
+  const sendErrorDetail = ref('')
   const toolStatus = ref('')
   const input = ref('')
   const pending = ref<{ kind: 'image' | 'text'; value: string }[]>([])
@@ -133,6 +135,7 @@ export function useAiChat(
   async function openChat(chatId: string): Promise<void> {
     activeChatId.value = chatId
     historyOpen.value = false
+    clearSendError()
     loadingMessages.value = true
     try {
       const resp = await getAiChatMessages(bizType, chatId, { limit: WIN_SIZE })
@@ -173,6 +176,7 @@ export function useAiChat(
       messages.value = []
       hasMoreBefore.value = false
       hasMoreAfter.value = false
+      clearSendError()
       activeChatId.value = resp.chat_id
       historyOpen.value = false
       resetWindowToTail()
@@ -289,9 +293,21 @@ export function useAiChat(
   }
 
   let abortController: AbortController | null = null
+  let stopped = false
 
   function stopStreaming(): void {
+    stopped = true
     abortController?.abort()
+  }
+
+  function clearSendError(): void {
+    sendError.value = ''
+    sendErrorDetail.value = ''
+  }
+
+  function reportSendFailure(failCode: string, detail = ''): void {
+    sendError.value = failCode
+    sendErrorDetail.value = detail
   }
 
   async function send(captureNeedsVision: boolean): Promise<void> {
@@ -318,11 +334,14 @@ export function useAiChat(
       .map((p) => `${t('reader.aiRefLabel')}\n${p.value}`)
     if (content) parts.push(content)
 
+    clearSendError()
+    stopped = false
     sending.value = true
     streaming.value = true
     toolStatus.value = ''
     abortController = new AbortController()
     let assistantId = ''
+    let finished = false
 
     try {
       await streamAiChatSend(
@@ -401,22 +420,28 @@ export function useAiChat(
           },
           onCompactStart: () => {
             compacting.value = true
-            compactNotice.value = t('ai.contextCompacting')
+            compactNotice.value = t('reader.contextCompacting')
             followScroll()
           },
           onCompactEnd: (ok) => {
             compacting.value = false
-            compactNotice.value = ok ? t('ai.contextCompacted') : ''
+            compactNotice.value = ok ? t('reader.contextCompacted') : ''
             if (ok) followScroll()
           },
-          onError: (failCode) => {
-            ElMessage.error({ __key: `errors.${failCode}` })
+          onDone: () => {
+            finished = true
+          },
+          onError: (failCode, detail) => {
+            finished = true
+            reportSendFailure(failCode, detail)
           },
         },
         abortController.signal,
       )
+      if (!finished && !stopped) reportSendFailure('NETWORK_ERROR')
     } catch {
-      // 请求异常（含主动中断），随后从服务端对账
+      // 主动停止静默；连接被掐断、网关超时、后端重启等要让用户看到
+      if (!stopped && !finished) reportSendFailure('NETWORK_ERROR')
     } finally {
       abortController = null
       streaming.value = false
@@ -473,6 +498,8 @@ export function useAiChat(
     compacting,
     compactNotice,
     sending,
+    sendError,
+    sendErrorDetail,
     toolStatus,
     input,
     pending,

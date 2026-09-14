@@ -534,6 +534,15 @@ fn sse_frame(event: &str, data: &serde_json::Value) -> web::Bytes {
     web::Bytes::from(format!("event: {}\ndata: {}\n\n", event, data))
 }
 
+/// error 事件负载：错误码 + 上游原始信息（有则带上，前端直接展示给用户）
+fn error_event(err: &ai::client::AiCallError) -> serde_json::Value {
+    let mut v = serde_json::json!({ "fail_code": err.code });
+    if let Some(detail) = &err.detail {
+        v["detail"] = serde_json::json!(detail);
+    }
+    v
+}
+
 pub async fn ai_chat_send(
     body: web::Json<ChatSendRequest>,
     http_req: HttpRequest,
@@ -903,9 +912,9 @@ pub async fn ai_chat_send(
             .await
             {
                 Ok(s) => s,
-                Err(code) => {
-                    emit(&tx, &mut disconnected, "error", &serde_json::json!({ "fail_code": code })).await;
-                    break;
+                Err(err) => {
+                    emit(&tx, &mut disconnected, "error", &error_event(&err)).await;
+                    return;
                 }
             };
 
@@ -914,21 +923,30 @@ pub async fn ai_chat_send(
             let mut tools_acc: Vec<ToolCallDone> = Vec::new();
             tokio::pin!(stream);
             let mut stream_ok = true;
+            // 首个事件涵盖建连与等响应头，用更短的超时暴露配置错误；其后只限制事件间隔
+            let mut first_event = true;
             loop {
-                let next = tokio::time::timeout(Duration::from_secs(120), stream.next()).await;
+                let wait = if first_event {
+                    ai::client::UPSTREAM_FIRST_EVENT_TIMEOUT
+                } else {
+                    ai::client::UPSTREAM_IDLE_TIMEOUT
+                };
+                let next = tokio::time::timeout(wait, stream.next()).await;
                 match next {
                     Err(_) => {
-                        emit(&tx, &mut disconnected, "error", &serde_json::json!({ "fail_code": "AI_TIMEOUT" })).await;
+                        let code = if first_event { "AI_CALL_FAILED" } else { "AI_TIMEOUT" };
+                        emit(&tx, &mut disconnected, "error", &serde_json::json!({ "fail_code": code })).await;
                         stream_ok = false;
                         break;
                     }
                     Ok(None) => break,
-                    Ok(Some(Err(_))) => {
-                        emit(&tx, &mut disconnected, "error", &serde_json::json!({ "fail_code": "AI_CALL_FAILED" })).await;
+                    Ok(Some(Err(err))) => {
+                        emit(&tx, &mut disconnected, "error", &error_event(&err)).await;
                         stream_ok = false;
                         break;
                     }
                     Ok(Some(Ok(event))) => {
+                        first_event = false;
                         if let Some(delta) = event.reasoning_delta {
                             reasoning_acc.push_str(&delta);
                             emit(&tx, &mut disconnected, "reasoning", &serde_json::json!({ "content": delta })).await;

@@ -324,10 +324,11 @@ pub async fn upload_chunk(
         Err(_) => 0,
     };
     if offset != current_size {
-        return HttpResponse::Ok().json(ApiResponse {
-            success: false,
-            fail_code: Some("INVALID_OFFSET".to_string()),
-        });
+        return HttpResponse::Ok().json(serde_json::json!({
+            "success": false,
+            "fail_code": "INVALID_OFFSET",
+            "uploaded_bytes": current_size
+        }));
     }
 
     let file = match std::fs::OpenOptions::new()

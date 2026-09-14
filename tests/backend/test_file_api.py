@@ -131,6 +131,45 @@ def test_file_api(session, root_path):
     assert data['fail_code'] == 'FILES_ALREADY_EXIST'
     assert 'hello.txt' in data['existing_files']
 
+    # --- upload: offset mismatch reports server-side written bytes ---
+    resp = session.post(f'{BASE_URL}/api/file/upload_start', json={
+        'files': ['offset.txt']
+    })
+    data = resp.json()
+    assert data['success']
+    offset_id = data['uploads'][0]['id']
+
+    resp = session.post(f'{BASE_URL}/api/file/upload_chunk', files={
+        'upload_id': (None, offset_id),
+        'offset': (None, '0'),
+        'chunk': ('chunk', b'abcdefgh', 'application/octet-stream')
+    })
+    assert resp.json()['success']
+
+    resp = session.post(f'{BASE_URL}/api/file/upload_chunk', files={
+        'upload_id': (None, offset_id),
+        'offset': (None, '0'),
+        'chunk': ('chunk', b'abcdefgh', 'application/octet-stream')
+    })
+    data = resp.json()
+    assert data['success'] is False
+    assert data['fail_code'] == 'INVALID_OFFSET'
+    assert data['uploaded_bytes'] == 8
+
+    resp = session.post(f'{BASE_URL}/api/file/upload_chunk', files={
+        'upload_id': (None, offset_id),
+        'offset': (None, '8'),
+        'chunk': ('chunk', b'tail', 'application/octet-stream')
+    })
+    assert resp.json()['success']
+
+    resp = session.post(f'{BASE_URL}/api/file/upload_complete', json={
+        'upload_id': offset_id
+    })
+    assert resp.json()['success']
+    with open(os.path.join(root_path, 'offset.txt'), 'rb') as f:
+        assert f.read() == b'abcdefghtail'
+
     # --- upload: batch start ---
     resp = session.post(f'{BASE_URL}/api/file/upload_start', json={
         'files': ['batch1.txt', 'batch2.txt']

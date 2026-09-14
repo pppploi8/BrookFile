@@ -12,6 +12,9 @@ MOCK_CAPTURED = []
 MOCK_SCRIPT = []
 MOCK_TITLE_SCRIPT = []
 MOCK_SUMMARY_SCRIPT = []
+MOCK_HANG = []
+# 待返回的上游错误：(状态码, 响应体)，用于验证原始报错透传
+MOCK_ERROR = []
 
 SUMMARIZATION_MARKER = 'context summarization assistant'
 
@@ -33,6 +36,20 @@ class MockResponsesHandler(BaseHTTPRequestHandler):
                 pass
 
     def _handle_post(self):
+        if MOCK_HANG:
+            # 模拟"连得上但永不回包"：读走请求后挂住，不发任何响应
+            MOCK_HANG.pop(0)
+            time.sleep(90)
+            return
+        if MOCK_ERROR:
+            status, payload = MOCK_ERROR.pop(0)
+            raw = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         length = int(self.headers.get('Content-Length', 0))
         body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
         MOCK_CAPTURED.append(body)
@@ -94,6 +111,29 @@ def read_sse_events(resp):
     if event_name:
         events.append(event_name)
     return events
+
+
+def read_sse_frames(resp):
+    """返回 [(事件名, 数据 dict), ...]，用于断言错误事件携带的原始报错"""
+    frames = []
+    event_name = ''
+    data_lines = []
+    for raw in resp.iter_lines(decode_unicode=True):
+        if raw is None:
+            continue
+        if raw == '':
+            if event_name:
+                frames.append((event_name, json.loads('\n'.join(data_lines)) if data_lines else {}))
+            event_name = ''
+            data_lines = []
+            continue
+        if raw.startswith('event:'):
+            event_name = raw[len('event:'):].strip()
+        elif raw.startswith('data:'):
+            data_lines.append(raw[len('data:'):].strip())
+    if event_name:
+        frames.append((event_name, json.loads('\n'.join(data_lines)) if data_lines else {}))
+    return frames
 
 
 def test_ai_chat_api(session, root_path):
@@ -299,6 +339,50 @@ def test_ai_chat_api(session, root_path):
         assert any('<summary>' in str(i.get('content', '')) for i in main_calls[-1]['input']), main_calls[-1]['input']
         # 压缩后 context_tokens 清零重计：第四轮主调用 mock 默认 usage 的 total_tokens
         assert stored['context_tokens'] == 120
+
+        # --- 上游挂死（连得上但永不回包）：建流超时必须发 error，不能静默 ---
+        # 先发一轮把会话转为非首轮，避免并行的标题生成请求抢走挂死标记
+        resp = session.post(f'{base}/api/ai/chat/create', json={'biz_type': 'ebook', 'biz_id': 'book-1'})
+        chat4 = resp.json()['chat_id']
+        MOCK_SCRIPT.append({'deltas': ['预热']})
+        with session.post(f'{base}/api/ai/chat/send', json={
+            'biz_type': 'ebook', 'chat_id': chat4, 'model_key': model_key, 'content': '预热',
+        }, stream=True) as resp:
+            assert 'done' in read_sse_events(resp)
+
+        MOCK_HANG.append(True)
+        hang_start = time.time()
+        with session.post(f'{base}/api/ai/chat/send', json={
+            'biz_type': 'ebook', 'chat_id': chat4, 'model_key': model_key, 'content': '供应商挂死',
+        }, stream=True) as resp:
+            events = read_sse_events(resp)
+        assert events[0] == 'user_message', events
+        # 错误必须是最后一个事件：不能再补一个 TOOL_ROUNDS_EXCEEDED 掩盖真实原因
+        assert events[-1] == 'error', events
+        assert time.time() - hang_start < 60, '建流超时未生效'
+
+        # --- 上游返回 401：error 事件要带上原始报错，用户才能分辨密钥错误 / 限流 / 5xx ---
+        resp = session.post(f'{base}/api/ai/chat/create', json={'biz_type': 'ebook', 'biz_id': 'book-1'})
+        chat5 = resp.json()['chat_id']
+        MOCK_SCRIPT.append({'deltas': ['预热']})
+        with session.post(f'{base}/api/ai/chat/send', json={
+            'biz_type': 'ebook', 'chat_id': chat5, 'model_key': model_key, 'content': '预热',
+        }, stream=True) as resp:
+            assert 'done' in read_sse_events(resp)
+
+        MOCK_ERROR.append((401, {'error': {'message': 'Invalid token', 'type': 'invalid_request_error'}}))
+        with session.post(f'{base}/api/ai/chat/send', json={
+            'biz_type': 'ebook', 'chat_id': chat5, 'model_key': model_key, 'content': '错误密钥',
+        }, stream=True) as resp:
+            frames = read_sse_frames(resp)
+        event, data = frames[-1]
+        assert event == 'error', frames
+        assert data['fail_code'] == 'AI_CALL_FAILED', data
+        detail = data.get('detail', '')
+        # 只暴露状态码 + 上游错误消息，不带 genai 的内部描述与原始 JSON
+        assert detail.startswith('HTTP 401'), detail
+        assert 'Invalid token' in detail, detail
+        assert 'Body:' not in detail and '{"' not in detail, detail
     finally:
         server.shutdown()
 

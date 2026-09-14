@@ -22,7 +22,6 @@ const { t } = useI18n()
 
 const ebookStore = useEbookStore()
 
-const rootEl = ref<HTMLElement>()
 const viewport = ref<HTMLElement>()
 const engine = shallowRef<ReaderEngine>()
 
@@ -154,8 +153,10 @@ function onViewportTap(): void {
   if (sel && sel.toString()) return
   chromeHidden.value = !chromeHidden.value
 }
+// 对整个文档全屏：全屏根为 <html>，Element Plus 挂载到 body 的浮层（下拉、气泡、消息）
+// 才能落在全屏子树内；若只对 .reader-shell 全屏，这些浮层会被浏览器裁掉。
 function toggleFullscreen(): void {
-  if (!document.fullscreenElement) rootEl.value?.requestFullscreen?.()
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.()
   else document.exitFullscreen?.()
 }
 function onTocClick(item: TocItem): void {
@@ -401,7 +402,7 @@ function onJump(): void {
 </script>
 
 <template>
-  <div class="reader-shell" ref="rootEl">
+  <div class="reader-shell">
     <div v-show="!chromeHidden" class="reader-toolbar">
       <el-button text :icon="ArrowLeft" @click="emit('back')" />
       <span class="reader-title" :title="title">{{ title }}</span>

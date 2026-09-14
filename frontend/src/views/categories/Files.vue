@@ -237,7 +237,7 @@
           <div class="upload-item-header">
             <span class="upload-item-name" :title="task.relativePath">{{ task.relativePath }}</span>
             <el-tag
-              :type="getStatusTagType(task.status)"
+              :type="task.retrying ? 'warning' : getStatusTagType(task.status)"
               size="small"
             >
               {{ getTaskStatusText(task) }}
@@ -514,6 +514,7 @@ interface UploadTask {
   uploadedBytes: number
   status: 'waiting' | 'uploading' | 'completed' | 'failed' | 'cancelled'
   failCode?: string
+  retrying?: boolean
   abortController?: AbortController
 }
 
@@ -902,74 +903,144 @@ const processUploadQueue = async () => {
   }
 }
 
-const startUpload = async (task: UploadTask) => {
-  try {
-    const startResponse = await uploadStart([task.relativePath])
-    
-    if (task.status !== 'uploading') return
-    
-    if (!startResponse.success) {
-      task.status = 'failed'
-      task.failCode = startResponse.fail_code
-      processUploadQueue()
+// 上传接口的网络错误重试：只有拿到带 fail_code 的后端响应才停止；无响应、超时、网关错误一律无限重试。
+const UPLOAD_RETRY_BASE_MS = 1000
+const UPLOAD_RETRY_MAX_MS = 15000
+
+type UploadCallResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; cancelled: true }
+  | { ok: false; cancelled: false; failCode: string }
+
+const isNetworkError = (error: any): boolean => {
+  if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return false
+  return !error?.response?.data?.fail_code
+}
+
+// 退避等待可被取消：任务取消后立刻结束等待，不必等满一轮退避
+const waitRetryDelay = (ms: number, signal: AbortSignal): Promise<void> => {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve()
       return
     }
-    
-    const uploadInfo = startResponse.uploads?.find(u => u.file === task.relativePath)
-    if (!uploadInfo) {
-      task.status = 'failed'
-      task.failCode = 'INTERNAL_ERROR'
-      processUploadQueue()
-      return
+    const finish = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', finish)
+      resolve()
     }
-    
-    task.uploadId = uploadInfo.id
-  } catch (error: any) {
-    if (task.status !== 'uploading') return
-    if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') return
-    task.status = 'failed'
-    task.failCode = 'NETWORK_ERROR'
-    processUploadQueue()
-    return
-  }
-  
-  if (task.status !== 'uploading') return
-  
-  await uploadFileChunks(task)
-  
-  if (task.status !== 'uploading') return
-  
-  try {
-    const completeResponse = await uploadComplete(task.uploadId!)
-    if (completeResponse.success) {
-      task.status = 'completed'
-      task.progress = 100
-    } else {
-      task.status = 'failed'
-      task.failCode = completeResponse.fail_code
+    const timer = setTimeout(finish, ms)
+    signal.addEventListener('abort', finish)
+  })
+}
+
+const callWithNetworkRetry = async <T>(
+  task: UploadTask,
+  call: (signal: AbortSignal) => Promise<T>
+): Promise<UploadCallResult<T>> => {
+  const signal = task.abortController!.signal
+  for (let attempt = 0; ; attempt++) {
+    if (task.status !== 'uploading' || signal.aborted) return { ok: false, cancelled: true }
+    try {
+      const value = await call(signal)
+      task.retrying = false
+      return { ok: true, value }
+    } catch (error: any) {
+      if (task.status !== 'uploading' || signal.aborted) return { ok: false, cancelled: true }
+      if (!isNetworkError(error)) {
+        task.retrying = false
+        return { ok: false, cancelled: false, failCode: error.response.data.fail_code }
+      }
+      task.retrying = true
+      const delay = Math.min(UPLOAD_RETRY_BASE_MS * 2 ** Math.min(attempt, 6), UPLOAD_RETRY_MAX_MS)
+      await waitRetryDelay(delay, signal)
     }
-  } catch (error: any) {
-    if (task.status !== 'uploading') return
-    if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') return
-    task.status = 'failed'
-    task.failCode = 'NETWORK_ERROR'
   }
+}
+
+const failUploadTask = (task: UploadTask, failCode: string) => {
+  task.status = 'failed'
+  task.failCode = failCode
+  task.retrying = false
   processUploadQueue()
 }
 
-const uploadFileChunks = async (task: UploadTask) => {
+// upload_complete 已成功但响应丢失时，重发会因上传会话已被清理得到 UPLOAD_NOT_FOUND；
+// 用目标路径确认文件是否已落盘，已存在即视为上传成功
+const targetFileExists = async (relativePath: string): Promise<boolean> => {
+  const slash = relativePath.lastIndexOf('/')
+  const dir = slash >= 0 ? relativePath.slice(0, slash) : ''
+  const name = slash >= 0 ? relativePath.slice(slash + 1) : relativePath
+  try {
+    const resp = await browseFiles(dir)
+    return (resp.files ?? []).some(f => f.name === name)
+  } catch {
+    return false
+  }
+}
+
+const startUpload = async (task: UploadTask) => {
+  task.abortController = new AbortController()
+
+  const started = await callWithNetworkRetry(task, (signal) => uploadStart([task.relativePath], signal))
+  if (!started.ok) {
+    if (started.cancelled) return
+    failUploadTask(task, started.failCode)
+    return
+  }
+  if (!started.value.success) {
+    failUploadTask(task, started.value.fail_code ?? 'INTERNAL_ERROR')
+    return
+  }
+
+  const uploadInfo = started.value.uploads?.find(u => u.file === task.relativePath)
+  if (!uploadInfo) {
+    failUploadTask(task, 'INTERNAL_ERROR')
+    return
+  }
+  task.uploadId = uploadInfo.id
+
+  const chunks = await uploadFileChunks(task)
+  if (!chunks.ok) {
+    if (chunks.cancelled) return
+    failUploadTask(task, chunks.failCode)
+    return
+  }
+
+  const completed = await callWithNetworkRetry(task, (signal) => uploadComplete(task.uploadId!, signal))
+  if (!completed.ok) {
+    if (completed.cancelled) return
+    failUploadTask(task, completed.failCode)
+    return
+  }
+  if (!completed.value.success) {
+    const failCode = completed.value.fail_code ?? 'INTERNAL_ERROR'
+    if (failCode === 'UPLOAD_NOT_FOUND' && await targetFileExists(task.relativePath)) {
+      task.status = 'completed'
+      task.progress = 100
+      processUploadQueue()
+      return
+    }
+    failUploadTask(task, failCode)
+    return
+  }
+
+  task.status = 'completed'
+  task.progress = 100
+  processUploadQueue()
+}
+
+const uploadFileChunks = async (task: UploadTask): Promise<UploadCallResult<void>> => {
   const file = task.file
-  let offset = 0
   const chunkSize = optimalChunkSize.value
-  
-  while (offset < file.size && task.status === 'uploading') {
-    const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size))
+  let offset = 0
+
+  while (offset < file.size) {
     const chunkStartOffset = offset
-    
-    task.abortController = new AbortController()
-    
-    try {
-      const response = await uploadChunk(
+    const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size))
+
+    const sent = await callWithNetworkRetry(task, (signal) =>
+      uploadChunk(
         task.uploadId!,
         chunkStartOffset,
         chunk,
@@ -979,33 +1050,38 @@ const uploadFileChunks = async (task: UploadTask) => {
             task.progress = Math.min(100, (task.uploadedBytes / file.size) * 100)
           }
         },
-        task.abortController.signal
+        signal
       )
-      if (response.success) {
-        offset += chunk.size
-        task.uploadedBytes = offset
-        task.progress = Math.min(100, (offset / file.size) * 100)
-      } else {
-        task.status = 'failed'
-        task.failCode = response.fail_code
-        return
-      }
-    } catch (error: any) {
-      if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
-        return
-      }
-      if (task.status !== 'uploading') return
-      task.status = 'failed'
-      task.failCode = 'NETWORK_ERROR'
-      return
+    )
+    if (!sent.ok) {
+      return sent.cancelled
+        ? { ok: false, cancelled: true }
+        : { ok: false, cancelled: false, failCode: sent.failCode }
     }
+
+    const response = sent.value
+    if (response.success) {
+      offset = chunkStartOffset + chunk.size
+    } else if (response.fail_code === 'INVALID_OFFSET' && typeof response.uploaded_bytes === 'number') {
+      // 分块已写入但响应丢失（超时/断连）时重发会拿到 INVALID_OFFSET，
+      // 按服务端返回的已写入字节数对齐后继续，而不是判定失败
+      offset = response.uploaded_bytes
+    } else {
+      return { ok: false, cancelled: false, failCode: response.fail_code ?? 'INTERNAL_ERROR' }
+    }
+
+    task.uploadedBytes = offset
+    task.progress = Math.min(100, (offset / file.size) * 100)
   }
+
+  return { ok: true, value: undefined }
 }
 
 const cancelAllUploads = async () => {
   for (const task of uploadTasks.value) {
     if (task.status === 'waiting' || task.status === 'uploading') {
       task.status = 'cancelled'
+      task.retrying = false
       if (task.abortController) {
         task.abortController.abort()
       }
@@ -1041,6 +1117,9 @@ const getStatusText = (status: UploadTask['status']) => {
 const getTaskStatusText = (task: UploadTask) => {
   if (task.status === 'failed' && task.failCode) {
     return `${t('files.failed')} (${getFailCodeText(task.failCode)})`
+  }
+  if (task.retrying) {
+    return t('files.retrying')
   }
   return getStatusText(task.status)
 }

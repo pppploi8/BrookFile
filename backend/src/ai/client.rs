@@ -54,6 +54,155 @@ pub struct ChatCompletionResult {
     pub max_tokens_hit: bool,
 }
 
+/// 上游调用失败的统一表示：错误码 + 可选的上游原始信息。
+/// `detail` 面向用户展示（如「HTTP 401 Unauthorized: Invalid token」），
+/// 只有拿不到上游响应时（本地超时、连接失败）才为 None。
+#[derive(Debug, Clone)]
+pub struct AiCallError {
+    pub code: String,
+    pub detail: Option<String>,
+}
+
+impl AiCallError {
+    pub fn new(code: &str) -> Self {
+        Self {
+            code: code.to_string(),
+            detail: None,
+        }
+    }
+}
+
+impl From<String> for AiCallError {
+    fn from(code: String) -> Self {
+        Self { code, detail: None }
+    }
+}
+
+impl From<AiCallError> for String {
+    /// 辅助路径（标题生成、上下文摘要）只关心错误码，丢弃上游原文
+    fn from(e: AiCallError) -> Self {
+        e.code
+    }
+}
+
+/// 上游报错原文的最大长度，避免把大段响应体塞进提示
+const UPSTREAM_DETAIL_MAX: usize = 300;
+
+fn brief(text: &str) -> String {
+    let t = text.trim();
+    let mut s: String = t.chars().take(UPSTREAM_DETAIL_MAX).collect();
+    if t.chars().count() > UPSTREAM_DETAIL_MAX {
+        s.push('…');
+    }
+    s
+}
+
+/// 上游错误体多为 `{"error":{"message":"..."}}`，取出可读文案；取不到则退回整个响应体
+fn message_from_body(body: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let msg = v
+        .get("error")
+        .and_then(|e| {
+            e.get("message")
+                .and_then(|m| m.as_str())
+                .or_else(|| e.as_str())
+        })
+        .or_else(|| v.get("message").and_then(|m| m.as_str()))
+        .or_else(|| v.get("detail").and_then(|m| m.as_str()))?;
+    let msg = msg.trim();
+    if msg.is_empty() {
+        None
+    } else {
+        Some(brief(msg))
+    }
+}
+
+fn status_detail(status: u16, reason: &str, body: &str) -> String {
+    let head = if reason.is_empty() {
+        format!("HTTP {status}")
+    } else {
+        format!("HTTP {status} {reason}")
+    };
+    match message_from_body(body) {
+        Some(msg) => format!("{head}: {msg}"),
+        None => {
+            let b = brief(body);
+            if b.is_empty() {
+                head
+            } else {
+                format!("{head}: {b}")
+            }
+        }
+    }
+}
+
+fn status_head(code: u16) -> String {
+    match reqwest::StatusCode::from_u16(code).ok().and_then(|s| s.canonical_reason()) {
+        Some(reason) => format!("HTTP {code} {reason}"),
+        None => format!("HTTP {code}"),
+    }
+}
+
+/// 部分变体（如 WebStream）只把上游响应压成一段文本，形如
+/// `HTTP error.\nStatus: 401 Unauthorized\nBody: {…}`，
+/// 这里还原出状态码与上游错误消息，避免把整段内部描述丢给用户。
+fn describe_from_text(text: &str) -> String {
+    let code: Option<u16> = text
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("Status:"))
+        .and_then(|s| s.trim().split_whitespace().next())
+        .and_then(|n| n.parse().ok());
+    let msg = text
+        .find('{')
+        .and_then(|start| text.rfind('}').map(|end| &text[start..=end]))
+        .and_then(message_from_body);
+    match (code, msg) {
+        (Some(c), Some(m)) => format!("{}: {m}", status_head(c)),
+        (Some(c), None) => status_head(c),
+        (None, Some(m)) => m,
+        (None, None) => brief(text),
+    }
+}
+
+/// 从 genai 错误中提取面向用户的可读描述（状态码 + 上游错误消息）。
+/// 兜底分支只用 Display 首行，避免把请求体（含用户对话内容）带进提示。
+fn describe_upstream_error(err: &genai::Error) -> Option<String> {
+    use genai::Error;
+    let detail = match err {
+        Error::HttpError {
+            status,
+            canonical_reason,
+            body,
+            ..
+        } => status_detail(status.as_u16(), canonical_reason, body),
+        Error::WebModelCall { webc_error, .. } | Error::WebAdapterCall { webc_error, .. } => {
+            match webc_error {
+                genai::webc::Error::ResponseFailedStatus { status, body, .. } => status_detail(
+                    status.as_u16(),
+                    status.canonical_reason().unwrap_or(""),
+                    body,
+                ),
+                genai::webc::Error::ResponseFailedNotJson { content_type, body } => {
+                    format!("{content_type}: {}", brief(body))
+                }
+                genai::webc::Error::ResponseFailedInvalidJson { cause, .. } => brief(cause),
+                other => brief(&other.to_string()),
+            }
+        }
+        Error::ChatResponse { body, .. } => {
+            message_from_body(&body.to_string()).unwrap_or_else(|| brief(&body.to_string()))
+        }
+        Error::WebStream { cause, .. } => describe_from_text(cause),
+        other => brief(other.to_string().lines().next().unwrap_or("")),
+    };
+    let detail = detail.trim().to_string();
+    if detail.is_empty() {
+        None
+    } else {
+        Some(detail)
+    }
+}
+
 /// 构建带代理配置的 genai 客户端（复用旧的代理语义：空=直连，http 代理）
 pub fn build_genai_client(proxy: &str) -> Result<Client, String> {
     let mut builder = reqwest13::Client::builder().connect_timeout(Duration::from_secs(30));
@@ -70,9 +219,16 @@ pub fn build_genai_client(proxy: &str) -> Result<Client, String> {
         .map_err(|_| "PROXY_INVALID".to_string())
 }
 
-/// 供模型列表拉取等旁路 HTTP 请求使用的普通客户端（旧语义：空=直连）
+/// 旁路请求（模型列表拉取）的总超时，含建连与读响应
+const SIDECAR_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 供模型列表拉取等旁路 HTTP 请求使用的普通客户端（旧语义：空=直连）。
+/// 设总超时：上游「连得上但永不回包」时，只靠 connect_timeout 会永久挂住，
+/// 调用方（如配置向导）会一直等不到任何结果。
 pub fn build_http_client(proxy: &str) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(30));
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(SIDECAR_REQUEST_TIMEOUT);
     if !proxy.is_empty() {
         let p = reqwest::Proxy::all(proxy).map_err(|_| "PROXY_INVALID".to_string())?;
         builder = builder.proxy(p);
@@ -109,6 +265,12 @@ fn service_target(config: &AiCallConfig) -> ModelSpec {
     }
     .into()
 }
+
+/// 上游首个事件的超时：请求是惰性的，真正建连与等响应头发生在流的首次拉取，
+/// 地址/密钥错误或中转挂死时对端不回包，不兜底的话调用方会永久挂起。
+pub const UPSTREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
+/// 事件间隔超时：已开始吐数据后，两个事件之间的最大间隔
+pub const UPSTREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn base_options(config: &AiCallConfig) -> ChatOptions {
     let mut options = ChatOptions::default()
@@ -281,7 +443,7 @@ pub async fn stream_chat_completion(
     config: &AiCallConfig,
     req: ChatRequest,
     tools: Option<Vec<Tool>>,
-) -> Result<impl Stream<Item = Result<ChatStreamEvent, String>>, String> {
+) -> Result<impl Stream<Item = Result<ChatStreamEvent, AiCallError>>, AiCallError> {
     let mut req = req;
     if let Some(list) = tools {
         if !list.is_empty() {
@@ -292,14 +454,23 @@ pub async fn stream_chat_completion(
     let resp = client
         .exec_chat_stream(service_target(config), req, Some(&options))
         .await
-        .map_err(|_| "AI_CALL_FAILED".to_string())?;
+        .map_err(upstream_error)?;
     Ok(map_stream(resp.stream))
 }
 
-fn map_stream(resp: genai::chat::ChatStream) -> impl Stream<Item = Result<ChatStreamEvent, String>> {
+fn upstream_error(err: genai::Error) -> AiCallError {
+    AiCallError {
+        code: "AI_CALL_FAILED".to_string(),
+        detail: describe_upstream_error(&err),
+    }
+}
+
+fn map_stream(
+    resp: genai::chat::ChatStream,
+) -> impl Stream<Item = Result<ChatStreamEvent, AiCallError>> {
     resp.filter_map(|item| async move {
         match item {
-            Err(_) => Some(Err("AI_CALL_FAILED".to_string())),
+            Err(e) => Some(Err(upstream_error(e))),
             Ok(genai::chat::ChatStreamEvent::Chunk(c)) => Some(Ok(ChatStreamEvent {
                 content_delta: Some(c.content),
                 ..Default::default()
@@ -337,7 +508,7 @@ pub async fn complete_chat(
     config: &AiCallConfig,
     req: ChatRequest,
     max_tokens: Option<u32>,
-) -> Result<ChatCompletionResult, String> {
+) -> Result<ChatCompletionResult, AiCallError> {
     let mut options = base_options(config);
     if let Some(mt) = max_tokens {
         options = options.with_max_tokens(mt);
@@ -345,12 +516,25 @@ pub async fn complete_chat(
     let resp = client
         .exec_chat_stream(service_target(config), req, Some(&options))
         .await
-        .map_err(|_| "AI_CALL_FAILED".to_string())?;
+        .map_err(upstream_error)?;
     let stream = map_stream(resp.stream);
     tokio::pin!(stream);
     let mut text = String::new();
     let mut max_tokens_hit = false;
-    while let Some(item) = stream.next().await {
+    let mut first = true;
+    loop {
+        let wait = if first {
+            UPSTREAM_FIRST_EVENT_TIMEOUT
+        } else {
+            UPSTREAM_IDLE_TIMEOUT
+        };
+        let item = match tokio::time::timeout(wait, stream.next()).await {
+            Ok(None) => break,
+            Ok(Some(item)) => item,
+            Err(_) if first => return Err(AiCallError::new("AI_CALL_FAILED")),
+            Err(_) => return Err(AiCallError::new("AI_TIMEOUT")),
+        };
+        first = false;
         match item {
             Err(e) => return Err(e),
             Ok(ev) => {

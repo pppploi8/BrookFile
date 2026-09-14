@@ -396,6 +396,15 @@
 }
 ```
 
+`INVALID_OFFSET` 会额外返回服务端当前已写入的字节数，客户端据此把 offset 对齐到服务端真实位置后续传：
+```json
+{
+  "success": false,
+  "fail_code": "INVALID_OFFSET",
+  "uploaded_bytes": 4194304
+}
+```
+
 **错误编码说明**：
 | 错误编码 | 说明 |
 |---------|------|
@@ -406,7 +415,7 @@
 | `MISSING_OFFSET` | 缺少offset参数 |
 | `MISSING_CHUNK` | 缺少chunk参数 |
 | `MULTIPART_PARSE_ERROR` | multipart解析失败 |
-| `INVALID_OFFSET` | 分块偏移无效 |
+| `INVALID_OFFSET` | 分块偏移与服务端已写入字节数不一致，额外返回 `uploaded_bytes` |
 | `FILE_TOO_LARGE` | 文件大小超出限制 |
 
 ## 9. 上传完成接口

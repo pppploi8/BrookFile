@@ -8,7 +8,7 @@ AI 配置为系统级全局配置（第一版先服务于电子书 AI 问答）�
 
 **路径**：POST /api/ai/provider/presets
 
-**功能**：列出后端支持的全部供应商类型预设（与 genai 适配器一一对应），前端配置页据此渲染供应商类型下拉与默认地址占位符。
+**功能**：列出后端支持的全部供应商类型预设（与 genai 适配器一一对应），前端配置页据此渲染供应商类型下拉与默认地址占位符。返回顺序即前端下拉的展示顺序：三个协议入口（`openai_completions`、`openai_responses`、`anthropic`）置顶，其余厂商按固定顺序跟随。
 
 **请求参数**：无
 
@@ -23,7 +23,9 @@ AI 配置为系统级全局配置（第一版先服务于电子书 AI 问答）�
 }
 ```
 
-当前预设全集：`openai_completions`、`openai_responses`、`deepseek`、`openrouter`、`groq`、`xai`、`moonshot`、`kimi`、`zai`、`fireworks`、`together`、`nebius`、`mimo`、`anthropic`、`gemini`、`ollama`、`ollama_cloud`、`cohere`、`custom`（自定义 OpenAI 兼容端点，`base_url` 必填）。`requires_api_key=false` 的预设（ollama）允许空密钥。
+当前预设全集（按返回顺序）：`openai_completions`、`openai_responses`、`anthropic`、`deepseek`、`openrouter`、`groq`、`xai`、`moonshot`、`kimi`、`zai`、`fireworks`、`together`、`nebius`、`mimo`、`gemini`、`ollama`、`ollama_cloud`、`cohere`。`requires_api_key=false` 的预设（ollama）允许空密钥。
+
+所有厂商的接口基本兼容这三个协议之一，接入非预设厂商时直接选 `openai_completions` 并覆盖 `base_url` 即可（适配器相同，仅默认地址不同）。
 
 **错误编码**：`NOT_LOGGED_IN`
 
@@ -156,7 +158,7 @@ AI 配置为系统级全局配置（第一版先服务于电子书 AI 问答）�
 
 **路径**：POST /api/ai/provider/fetch_models
 
-**功能**：按供应商类型调用其模型列表接口（不必已入库，可来自正在配置的表单）。各类型风格不同：OpenAI 兼容族为 `GET {base_url}/models`（Bearer）；`anthropic` 为 `GET {base_url}/models`（`x-api-key` + `anthropic-version` 头）；`gemini` 为 `GET {base_url}/models`（`x-goog-api-key` 头，返回名去掉 `models/` 前缀）；`ollama`/`ollama_cloud` 为 `GET {base_url}/api/tags`；`cohere` 为 `GET {base_url}/models`（Bearer）。请求中的 `proxy` 会在出站时实际使用；留空表示直连。调用失败属于预期情况，前端应引导用户手动添加模型。`base_url`、`api_key` 或 `proxy` 为空且提供 `provider_id` 时，回退使用该供应商已存储的值（编辑供应商未改时使用）。
+**功能**：按供应商类型调用其模型列表接口（不必已入库，可来自正在配置的表单）。各类型风格不同：OpenAI 兼容族为 `GET {base_url}/models`（Bearer）；`anthropic` 为 `GET {base_url}/models`（`x-api-key` + `anthropic-version` 头）；`gemini` 为 `GET {base_url}/models`（`x-goog-api-key` 头，返回名去掉 `models/` 前缀）；`ollama`/`ollama_cloud` 为 `GET {base_url}/api/tags`；`cohere` 为 `GET {base_url}/models`（Bearer）。请求中的 `proxy` 会在出站时实际使用；留空表示直连。调用失败属于预期情况，前端应引导用户手动添加模型。**上游请求设 30 秒总超时**（含建连与读响应），超时同样返回 `AI_MODEL_LIST_FAILED`，避免供应商「连得上但永不回包」时接口永久挂住。`base_url`、`api_key` 或 `proxy` 为空且提供 `provider_id` 时，回退使用该供应商已存储的值（编辑供应商未改时使用）。
 
 **请求参数**：
 ```json
@@ -340,11 +342,13 @@ AI 会话为公共能力，任何业务通过 `biz_type`（+ `biz_id`）接入�
 | tool_end | `{ "name": "工具名", "ok": true/false }` | 工具执行结束 |
 | page_query | `{ "request_id": "uuid", "kind": "查询类型", "params": {…} }` | 工具向页面查询数据，页面按 kind 应答后调用接口 15 回传，20s 超时 |
 | done | `{ "message_id": "uuid" }` | 助手消息已落盘，流结束 |
-| error | `{ "fail_code": "…" }` | 出错终止，已生成内容已落盘 |
+| error | `{ "fail_code": "…", "detail": "上游原始报错（可选）" }` | 出错终止，已生成内容已落盘 |
 
 **工具产出图片**：工具可返回截图（如 `view_pdf_page`），落盘到会话图片目录并挂在 `tool` 消息的 `images` 字段上；模型支持视觉（`supports_vision`）时，图片以视觉消息注入本轮上下文，历史多轮重放时同样还原。
 
 **错误编码**（事件 `error` 或直接 JSON 响应）：`NOT_LOGGED_IN`、`PARAM_INVALID`、`AI_CHAT_PATH_NOT_SET`、`CHAT_NOT_FOUND`、`MODEL_NOT_FOUND`、`PROVIDER_TYPE_INVALID`、`PROXY_INVALID`、`IMAGE_INVALID`、`IMAGE_TOO_LARGE`、`AI_CALL_FAILED`、`AI_TIMEOUT`、`TOOL_ROUNDS_EXCEEDED`、`TOOL_NOT_AVAILABLE`
+
+**上游原始报错**：上游返回失败响应时（如 401 密钥无效、429 限流、5xx 服务异常），`error` 事件在 `fail_code` 之外附带 `detail`，内容为「HTTP 状态码 + 原因 + 上游返回的错误消息」（如 `HTTP 401 Unauthorized: Invalid token`，最长 300 字符），供界面直接展示，便于用户分辨失败原因。仅当拿不到上游响应（本地超时、连接失败）时 `detail` 缺省。请求内容不会出现在 `detail` 中。
 
 ## 14. 读取消息图片
 

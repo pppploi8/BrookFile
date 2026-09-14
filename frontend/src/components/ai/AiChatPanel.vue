@@ -119,13 +119,17 @@ onMounted(() => {
             <span v-else-if="m.content">{{ m.content }}</span>
           </div>
         </template>
+        <div v-if="ai.sendError.value" class="ai-msg ai-error-msg">
+          <div>{{ t(`errors.${ai.sendError.value}`) }}</div>
+          <div v-if="ai.sendErrorDetail.value" class="ai-error-detail">{{ ai.sendErrorDetail.value }}</div>
+        </div>
         <div v-if="ai.toolStatus.value" class="ai-tool-status">
           <el-icon class="is-loading"><Loading /></el-icon>
           <span>{{ t('reader.aiToolRunning', { tool: ai.toolStatus.value }) }}</span>
         </div>
         <div v-if="ai.compacting.value" class="ai-tool-status">
           <el-icon class="is-loading"><Loading /></el-icon>
-          <span>{{ t('ai.contextCompacting') }}</span>
+          <span>{{ t('reader.contextCompacting') }}</span>
         </div>
         <div v-else-if="ai.compactNotice.value" class="ai-tool-status ai-compact-done">
           <span>{{ ai.compactNotice.value }}</span>
@@ -340,6 +344,18 @@ onMounted(() => {
 .ai-msg.assistant {
   align-self: flex-start;
   background: var(--el-fill-color-light);
+}
+.ai-msg.ai-error-msg {
+  align-self: flex-start;
+  background: var(--el-color-danger-light-9);
+  border: 1px solid var(--el-color-danger-light-7);
+  color: var(--el-color-danger);
+}
+.ai-error-detail {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.85;
+  word-break: break-word;
 }
 .ai-img {
   max-width: 100%;

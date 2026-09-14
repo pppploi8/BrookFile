@@ -19,7 +19,7 @@ AI 配置为系统级全局配置（全功能公用，第一版先服务于电�
 
 ### AI供应商表说明
 
-- `provider_type` 对应后端预设表（`ai/provider.rs`）：`openai_completions`、`openai_responses`、`deepseek`、`openrouter`、`groq`、`xai`、`moonshot`、`kimi`、`zai`、`fireworks`、`together`、`nebius`、`mimo`、`anthropic`、`gemini`、`ollama`、`ollama_cloud`、`cohere`、`custom`；适配器决定上游协议与消息/思考参数映射
+- `provider_type` 对应后端预设表（`ai/provider.rs`）：`openai_completions`、`openai_responses`、`anthropic`、`deepseek`、`openrouter`、`groq`、`xai`、`moonshot`、`kimi`、`zai`、`fireworks`、`together`、`nebius`、`mimo`、`gemini`、`ollama`、`ollama_cloud`、`cohere`；适配器决定上游协议与消息/思考参数映射。接入非预设厂商时用 `openai_completions` 覆盖 `base_url` 即可
 - `base_url` 为根地址：以 `http://` 或 `https://` 开头，存储时去除末尾 `/`；空串表示使用 `provider_type` 预设的默认地址（调用时兜底）。旧版数据（完整 `/responses` 地址）在调用时自动剥掉后缀兼容
 - `proxy` 仅供 HTTP 代理（`http://` 开头的地址），访问境外平台时需配置；空串表示直连
 - 删除供应商时级联删除其下所有模型（`ai_models.provider_id ON DELETE CASCADE`）

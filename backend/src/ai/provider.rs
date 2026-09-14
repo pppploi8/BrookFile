@@ -20,6 +20,8 @@ macro_rules! openai_compat_preset {
     };
 }
 
+/// 顺序即前端下拉的展示顺序：三个协议入口（OpenAI 两种 + Anthropic）置顶，
+/// 其余厂商按原顺序跟随。
 pub const PROVIDER_PRESETS: &[ProviderPreset] = &[
     openai_compat_preset!(
         "openai_completions",
@@ -33,6 +35,13 @@ pub const PROVIDER_PRESETS: &[ProviderPreset] = &[
         AdapterKind::OpenAIResp,
         "https://api.openai.com/v1/"
     ),
+    ProviderPreset {
+        type_id: "anthropic",
+        name: "Anthropic",
+        adapter: AdapterKind::Anthropic,
+        default_base_url: "https://api.anthropic.com/v1/",
+        requires_api_key: true,
+    },
     openai_compat_preset!("deepseek", "DeepSeek", AdapterKind::DeepSeek, "https://api.deepseek.com/v1/"),
     openai_compat_preset!("openrouter", "OpenRouter", AdapterKind::OpenRouter, "https://openrouter.ai/api/v1/"),
     openai_compat_preset!("groq", "Groq", AdapterKind::Groq, "https://api.groq.com/openai/v1/"),
@@ -49,13 +58,6 @@ pub const PROVIDER_PRESETS: &[ProviderPreset] = &[
     openai_compat_preset!("together", "Together", AdapterKind::Together, "https://api.together.xyz/v1/"),
     openai_compat_preset!("nebius", "Nebius", AdapterKind::Nebius, "https://api.studio.nebius.ai/v1/"),
     openai_compat_preset!("mimo", "Mimo", AdapterKind::Mimo, "https://api.mimo.com/openai/v1/"),
-    ProviderPreset {
-        type_id: "anthropic",
-        name: "Anthropic",
-        adapter: AdapterKind::Anthropic,
-        default_base_url: "https://api.anthropic.com/v1/",
-        requires_api_key: true,
-    },
     ProviderPreset {
         type_id: "gemini",
         name: "Gemini",
@@ -84,7 +86,6 @@ pub const PROVIDER_PRESETS: &[ProviderPreset] = &[
         default_base_url: "https://api.cohere.com/v1/",
         requires_api_key: true,
     },
-    openai_compat_preset!("custom", "OpenAI Compatible", AdapterKind::OpenAI, ""),
 ];
 
 pub fn preset_by_type(type_id: &str) -> Option<&'static ProviderPreset> {

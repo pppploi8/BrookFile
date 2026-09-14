@@ -96,6 +96,8 @@ export interface ReaderEngine {
   // 解析用户输入（pdf 为页码，txt/epub 可为百分比等），成功返回 true
   goToLocation(input: string): boolean
   goToToc(item: TocItem): void
+  // 渲染任意页为截图 dataURL（仅 PDF 引擎实现），失败返回 null
+  renderPageImage?(page: number): Promise<string | null>
   // 当前位置的内容坐标（字体无关，格式随格式而异：txt=章节号:章内字符偏移，
   // epub=CFI，pdf=页码:页内滚动比例），未就绪返回 null
   getContentCoord(): string | null

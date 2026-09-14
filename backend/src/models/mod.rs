@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod backup_rule;
 pub mod notebook;
 pub mod recycle_bin;
@@ -9,6 +10,7 @@ pub mod vault;
 pub mod webdav_config;
 pub mod webdav_cors;
 
+pub use ai::*;
 pub use backup_rule::*;
 pub use notebook::*;
 pub use recycle_bin::*;

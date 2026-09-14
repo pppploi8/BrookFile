@@ -608,6 +608,29 @@ export class PdfEngine implements ReaderEngine {
     // PDF 大纲（索引）暂未实现，预留接口
   }
 
+  // 渲染任意页为 JPEG dataURL（AI 页面查看工具用，独立于阅读画布）。
+  // 输出宽度收敛到 1000px，控制截图体积。
+  async renderPageImage(page: number): Promise<string | null> {
+    if (!this.pdfDoc || page < 1 || page > this.state.total) return null
+    try {
+      const pg = await this.pdfDoc.getPage(page)
+      const base = pg.getViewport({ scale: 1 })
+      const scale = Math.min(2, Math.max(0.5, 1000 / base.width))
+      const viewport = pg.getViewport({ scale })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.floor(viewport.width)
+      canvas.height = Math.floor(viewport.height)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return null
+      ctx.fillStyle = '#fff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      await pg.render({ canvasContext: ctx, viewport }).promise
+      return canvas.toDataURL('image/jpeg', 0.85)
+    } catch {
+      return null
+    }
+  }
+
   // ---- 书签 ----
 
   // 书签按页码比较（坐标 "页码:比例" 的页码部分）。

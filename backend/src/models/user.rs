@@ -24,6 +24,7 @@ pub struct UserInfo {
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
     pub ebook_path: Option<String>,
+    pub ai_chat_path: Option<String>,
 }
 
 impl UserModel {
@@ -101,7 +102,7 @@ impl UserModel {
         let conn = self.pool.get().map_err(|e| e.to_string())?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, username, root_path, recycle_bin_path, is_admin, expire_at, remark, feature_order, created_at, updated_at, ebook_path FROM users WHERE username = ?1"
+            "SELECT id, username, root_path, recycle_bin_path, is_admin, expire_at, remark, feature_order, created_at, updated_at, ebook_path, ai_chat_path FROM users WHERE username = ?1"
         ).map_err(|e| e.to_string())?;
 
         let result: Result<UserInfo, _> = stmt.query_row(params![username], |row| {
@@ -117,6 +118,7 @@ impl UserModel {
                 created_at: row.get(8)?,
                 updated_at: row.get(9)?,
                 ebook_path: row.get(10)?,
+                ai_chat_path: row.get(11)?,
             })
         });
 
@@ -147,7 +149,7 @@ impl UserModel {
         let conn = self.pool.get().map_err(|e| e.to_string())?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, username, root_path, recycle_bin_path, is_admin, expire_at, remark, feature_order, created_at, updated_at, ebook_path FROM users WHERE id = ?1"
+            "SELECT id, username, root_path, recycle_bin_path, is_admin, expire_at, remark, feature_order, created_at, updated_at, ebook_path, ai_chat_path FROM users WHERE id = ?1"
         ).map_err(|e| e.to_string())?;
 
         let result: Result<UserInfo, _> = stmt.query_row(params![user_id], |row| {
@@ -163,6 +165,7 @@ impl UserModel {
                 created_at: row.get(8)?,
                 updated_at: row.get(9)?,
                 ebook_path: row.get(10)?,
+                ai_chat_path: row.get(11)?,
             })
         });
 
@@ -367,7 +370,7 @@ impl UserModel {
         let conn = self.pool.get().map_err(|e| e.to_string())?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, username, root_path, recycle_bin_path, is_admin, expire_at, remark, feature_order, created_at, updated_at, ebook_path FROM users ORDER BY created_at DESC"
+            "SELECT id, username, root_path, recycle_bin_path, is_admin, expire_at, remark, feature_order, created_at, updated_at, ebook_path, ai_chat_path FROM users ORDER BY created_at DESC"
         ).map_err(|e| e.to_string())?;
 
         let users = stmt
@@ -384,6 +387,7 @@ impl UserModel {
                     created_at: row.get(8)?,
                     updated_at: row.get(9)?,
                     ebook_path: row.get(10)?,
+                    ai_chat_path: row.get(11)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -448,6 +452,18 @@ impl UserModel {
         conn.execute(
             "UPDATE users SET ebook_path = ?1, updated_at = datetime('now') WHERE id = ?2",
             params![ebook_path, user_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    pub fn update_ai_chat_path(&self, user_id: &str, ai_chat_path: Option<&str>) -> Result<(), String> {
+        let conn = self.pool.get().map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "UPDATE users SET ai_chat_path = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![ai_chat_path, user_id],
         )
         .map_err(|e| e.to_string())?;
 

@@ -2,7 +2,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 
 pub type Pool = r2d2::Pool<SqliteConnectionManager>;
 
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 9;
 
 pub struct Database {
     pub pool: Pool,
@@ -61,7 +61,8 @@ impl Database {
                 feature_order TEXT DEFAULT 'file,note,password',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                ebook_path TEXT
+                ebook_path TEXT,
+                ai_chat_path TEXT
             )",
             [],
         )?;
@@ -261,6 +262,44 @@ impl Database {
         )?;
 
         conn.execute(
+            "CREATE TABLE IF NOT EXISTS ai_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider_type TEXT NOT NULL DEFAULT 'openai_responses',
+                base_url TEXT NOT NULL,
+                api_key TEXT NOT NULL,
+                proxy TEXT NOT NULL DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ai_models (
+                id TEXT PRIMARY KEY,
+                provider_id TEXT NOT NULL REFERENCES ai_providers(id) ON DELETE CASCADE,
+                model_id TEXT NOT NULL,
+                supports_vision INTEGER NOT NULL DEFAULT 0,
+                context_length INTEGER NOT NULL DEFAULT 0,
+                max_output_tokens INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ai_models_provider_id ON ai_models(provider_id)",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_models_provider_model ON ai_models(provider_id, model_id)",
+            [],
+        )?;
+
+        conn.execute(
             "INSERT OR IGNORE INTO system_config (key, value) VALUES ('system_name', 'BrookFile')",
             [],
         )?;
@@ -269,6 +308,11 @@ impl Database {
     }
 
     fn legacy_fixups(conn: &r2d2::PooledConnection<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
+        let _ = conn.execute(
+            "ALTER TABLE ai_providers ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'openai_responses'",
+            [],
+        );
+
         let _ = conn.execute(
             "ALTER TABLE webdav_configs ADD COLUMN global_access INTEGER NOT NULL DEFAULT 0",
             [],
@@ -321,6 +365,47 @@ impl Database {
 
         if from < 5 {
             let _ = conn.execute("ALTER TABLE users ADD COLUMN ebook_path TEXT", []);
+        }
+
+        if from < 6 {
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN ai_chat_path TEXT", []);
+            let _ = conn.execute(
+                "CREATE TABLE IF NOT EXISTS ai_providers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    base_url TEXT NOT NULL,
+                    api_key TEXT NOT NULL,
+                    proxy TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE TABLE IF NOT EXISTS ai_models (
+                    id TEXT PRIMARY KEY,
+                    provider_id TEXT NOT NULL REFERENCES ai_providers(id) ON DELETE CASCADE,
+                    model_id TEXT NOT NULL,
+                    supports_vision INTEGER NOT NULL DEFAULT 0,
+                    context_length INTEGER NOT NULL DEFAULT 0,
+                    max_output_tokens INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_models_provider_id ON ai_models(provider_id)",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_models_provider_model ON ai_models(provider_id, model_id)",
+                [],
+            );
+        }
+
+        if from < 9 {
+            Self::legacy_fixups(conn)?;
         }
 
         Ok(())

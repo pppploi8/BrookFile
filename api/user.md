@@ -448,3 +448,15 @@
 | `NOT_LOGGED_IN` | 用户未登录 |
 | `INVALID_FEATURE_ORDER` | 排序格式无效 |
 | `INTERNAL_ERROR` | 内部错误 |
+
+## 11. 设置AI会话存储目录
+
+**路径**：POST /api/user/set_ai_chat_path
+
+**功能**：设置当前用户的 AI 会话存储目录（相对用户 root_path，目录不存在则自动创建），空串表示停用。与 `/api/user/set_ebook_path` 同风格。
+
+**请求**：`{ "ai_chat_path": "aichat" }`
+
+**成功响应**：`{ "success": true }`
+
+**错误编码**：`NOT_LOGGED_IN`、`PATH_INVALID`

@@ -1,7 +1,7 @@
 <template>
   <div class="profile-container">
     <div class="profile-card">
-      <el-tabs model-value="settings" class="profile-tabs" style="height: 100%">
+      <el-tabs v-model="activeTab" class="profile-tabs" style="height: 100%">
         <el-tab-pane :label="t('settings.title')" name="settings">
           <div class="tab-content">
             <div class="basic-info-wrapper">
@@ -76,6 +76,11 @@
             </div>
           </div>
         </el-tab-pane>
+        <el-tab-pane :label="t('ai.title')" name="ai">
+          <div class="tab-content">
+            <AiConfigPanel />
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </div>
   </div>
@@ -86,6 +91,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import AiConfigPanel from '@/components/AiConfigPanel.vue'
 import {
   getSystemSettings,
   updateSystemSettings,
@@ -96,6 +102,7 @@ import {
 
 const { t } = useI18n()
 const userStore = useUserStore()
+const activeTab = ref('settings')
 
 const form = ref({
   system_name: '',

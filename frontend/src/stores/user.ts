@@ -79,6 +79,12 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  function setAiChatPath(path: string) {
+    if (user.value) {
+      user.value = { ...user.value, ai_chat_path: path || undefined }
+    }
+  }
+
   function setEbookDbStatus(status: string) {
     if (user.value) {
       user.value = { ...user.value, ebook_db_status: status }
@@ -102,6 +108,7 @@ export const useUserStore = defineStore('user', () => {
     setHasShares,
     setEbookEnabled,
     setEbookPath,
+    setAiChatPath,
     setEbookDbStatus,
     loadSystemLogo,
   }

@@ -24,6 +24,7 @@ pub struct UserInfoResponse {
     pub recycle_bin_enabled: bool,
     pub has_shares: bool,
     pub ebook_path: Option<String>,
+    pub ai_chat_path: Option<String>,
     pub ebook_enabled: bool,
     pub ebook_db_status: String,
 }
@@ -92,6 +93,7 @@ pub async fn get_system_info(
                         recycle_bin_enabled: user_info.recycle_bin_path.is_some(),
                         has_shares,
                         ebook_path: user_info.ebook_path.clone(),
+                        ai_chat_path: user_info.ai_chat_path.clone(),
                         ebook_enabled,
                         ebook_db_status,
                     })

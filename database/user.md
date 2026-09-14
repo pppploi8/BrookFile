@@ -16,3 +16,4 @@
 | created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 | ebook_path | TEXT | NULL | 电子书数据存储目录（相对/绝对路径），用于存放电子书元数据；非空即表示已启用电子书模块 |
+| ai_chat_path | TEXT | NULL | AI 会话存储目录（相对于用户 root_path），非空即表示已启用 AI 会话；会话以文件形式存储在该目录下（见 database/ai.md） |

@@ -83,6 +83,7 @@ export interface UserInfo {
   recycle_bin_enabled?: boolean
   has_shares?: boolean
   ebook_path?: string
+  ai_chat_path?: string
   ebook_enabled?: boolean
   ebook_db_status?: string
 }
@@ -1280,6 +1281,126 @@ export async function deleteSystemLogo(): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/system/delete_logo', data: {} })
 }
 
+// ==================== AI 配置接口 ====================
+
+export interface AiModelItem {
+  id: string
+  model_id: string
+  supports_vision: boolean
+  context_length: number
+  max_output_tokens: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AiProviderItem {
+  id: string
+  name: string
+  provider_type: string
+  base_url: string
+  proxy: string
+  has_api_key: boolean
+  created_at: string
+  updated_at: string
+  models: AiModelItem[]
+}
+
+export interface AiProviderPreset {
+  type_id: string
+  name: string
+  default_base_url: string
+  requires_api_key: boolean
+}
+
+export interface ListProviderPresetsResponse {
+  success: boolean
+  presets: AiProviderPreset[]
+}
+
+export interface ListAiProvidersResponse {
+  success: boolean
+  providers: AiProviderItem[]
+}
+
+export interface AiNewModelInput {
+  model_id: string
+  supports_vision?: boolean
+  context_length?: number
+  max_output_tokens?: number
+}
+
+export interface CreateAiProviderRequest {
+  name: string
+  provider_type: string
+  base_url?: string
+  api_key: string
+  proxy?: string
+  models?: AiNewModelInput[]
+}
+
+export interface CreateAiProviderResponse {
+  success: boolean
+  provider_id: string
+}
+
+export interface AiModelEditInput extends AiNewModelInput {
+  id?: string
+}
+
+export interface UpdateAiProviderRequest {
+  id: string
+  name: string
+  provider_type: string
+  base_url?: string
+  api_key?: string
+  proxy?: string
+  models?: AiModelEditInput[]
+}
+
+export interface FetchAiModelsResponse {
+  success: boolean
+  models: string[]
+}
+
+export async function listAiProviders(): Promise<ListAiProvidersResponse> {
+  return request({ method: 'POST', url: '/ai/provider/list', data: {}, skipErrorMessage: true, rawResponse: true })
+}
+
+export async function listAiProviderPresets(): Promise<ListProviderPresetsResponse> {
+  return request({ method: 'POST', url: '/ai/provider/presets', data: {} })
+}
+
+export async function createAiProvider(data: CreateAiProviderRequest): Promise<CreateAiProviderResponse> {
+  return request({ method: 'POST', url: '/ai/provider/create', data })
+}
+
+export async function updateAiProvider(data: UpdateAiProviderRequest): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/ai/provider/update', data })
+}
+
+export async function deleteAiProvider(id: string): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/ai/provider/delete', data: { id } })
+}
+
+export async function fetchAiModels(
+  provider_type: string,
+  base_url?: string,
+  api_key?: string,
+  proxy?: string,
+  provider_id?: string,
+): Promise<FetchAiModelsResponse> {
+  return request({
+    method: 'POST',
+    url: '/ai/provider/fetch_models',
+    data: { provider_type, base_url: base_url || '', api_key: api_key || '', proxy: proxy || '', provider_id },
+    skipErrorMessage: true,
+  })
+}
+
+export async function deleteAiModel(id: string): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/ai/model/delete', data: { id } })
+}
+
 // ==================== 登录设备接口 ====================
 
 export interface SessionInfo {
@@ -1317,6 +1438,176 @@ export async function updateSessionName(data: UpdateSessionNameRequest): Promise
 
 export async function revokeSession(data: RevokeSessionRequest): Promise<ApiResponse> {
   return requestWithSuccess({ method: 'POST', url: '/session/revoke', data })
+}
+
+
+export interface AiChatMeta {
+  id: string
+  biz_type: string
+  biz_id: string
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AiChatMessage {
+  id: string
+  role: 'user' | 'assistant' | 'tool' | 'system' | 'compact'
+  content: string
+  reasoning?: string
+  images: string[]
+  tool_calls?: unknown
+  tool_call_id?: string
+  name?: string
+  model_key?: string
+  created_at: string
+}
+
+export interface ListAiChatsResponse extends ApiResponse {
+  chats?: AiChatMeta[]
+}
+
+export interface CreateAiChatResponse extends ApiResponse {
+  chat_id?: string
+}
+
+export interface GetAiChatMessagesResponse extends ApiResponse {
+  messages?: AiChatMessage[]
+  has_more_before?: boolean
+  has_more_after?: boolean
+}
+
+export async function setAiChatPath(path: string): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/user/set_ai_chat_path', data: { ai_chat_path: path } })
+}
+
+export async function listAiChats(bizType: string, bizId: string): Promise<ListAiChatsResponse> {
+  return request({ method: 'POST', url: '/ai/chat/list', data: { biz_type: bizType, biz_id: bizId } })
+}
+
+export async function createAiChat(bizType: string, bizId: string): Promise<CreateAiChatResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/ai/chat/create', data: { biz_type: bizType, biz_id: bizId } })
+}
+
+export async function renameAiChat(bizType: string, chatId: string, title: string): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/ai/chat/rename', data: { biz_type: bizType, chat_id: chatId, title } })
+}
+
+export async function deleteAiChat(bizType: string, chatId: string): Promise<ApiResponse> {
+  return requestWithSuccess({ method: 'POST', url: '/ai/chat/delete', data: { biz_type: bizType, chat_id: chatId } })
+}
+
+// 回传 AI 工具的页面查询应答（data 格式由 kind 定义，空串表示应答失败）
+export async function postAiPageQueryResult(requestId: string, data: string): Promise<void> {
+  await requestWithSuccess({
+    method: 'POST',
+    url: '/ai/chat/page_query_result',
+    data: { request_id: requestId, data },
+  })
+}
+
+export async function getAiChatMessages(
+  bizType: string,
+  chatId: string,
+  options?: { beforeId?: string; afterId?: string; limit?: number },
+): Promise<GetAiChatMessagesResponse> {
+  return request({
+    method: 'POST',
+    url: '/ai/chat/messages',
+    data: {
+      biz_type: bizType,
+      chat_id: chatId,
+      before_id: options?.beforeId,
+      after_id: options?.afterId,
+      limit: options?.limit,
+    },
+  })
+}
+
+export interface AiChatStreamHandlers {
+  onUserMessage?: (msg: AiChatMessage) => void
+  onReasoning?: (content: string) => void
+  onDelta?: (content: string) => void
+  onToolStart?: (name: string, args: string) => void
+  onToolEnd?: (name: string, ok: boolean) => void
+  onPageQuery?: (requestId: string, kind: string, params: Record<string, unknown>) => Promise<void>
+  onCompactStart?: (tokensBefore: number) => void
+  onCompactEnd?: (ok: boolean) => void
+  onDone?: (messageId: string) => void
+  onError?: (failCode: string) => void
+}
+
+export async function streamAiChatSend(
+  params: { bizType: string; chatId: string; modelKey: string; content: string; images: string[]; thinking?: string },
+  handlers: AiChatStreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const resp = await fetch('/api/ai/chat/send', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      biz_type: params.bizType,
+      chat_id: params.chatId,
+      model_key: params.modelKey,
+      content: params.content,
+      images: params.images,
+      thinking: params.thinking || undefined,
+    }),
+    signal,
+  })
+  if (!resp.ok || !resp.body) {
+    handlers.onError?.('AI_CALL_FAILED')
+    return
+  }
+  const contentType = resp.headers.get('content-type') || ''
+  if (!contentType.includes('text/event-stream')) {
+    let failCode = 'AI_CALL_FAILED'
+    try {
+      const json = await resp.json()
+      if (json?.fail_code) failCode = json.fail_code
+    } catch {
+      // 保持默认错误码
+    }
+    handlers.onError?.(failCode)
+    return
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
+    let pos: number
+    while ((pos = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, pos)
+      buffer = buffer.slice(pos + 2)
+      let event = 'message'
+      const dataLines: string[] = []
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
+      }
+      if (!dataLines.length) continue
+      let data: any
+      try {
+        data = JSON.parse(dataLines.join('\n'))
+      } catch {
+        continue
+      }
+      if (event === 'user_message') handlers.onUserMessage?.(data)
+      else if (event === 'reasoning') handlers.onReasoning?.(data.content ?? '')
+      else if (event === 'delta') handlers.onDelta?.(data.content ?? '')
+      else if (event === 'tool_start') handlers.onToolStart?.(data.name ?? '', data.arguments ?? '')
+      else if (event === 'tool_end') handlers.onToolEnd?.(data.name ?? '', !!data.ok)
+      else if (event === 'page_query') await handlers.onPageQuery?.(data.request_id ?? '', data.kind ?? '', (data.params ?? {}) as Record<string, unknown>)
+      else if (event === 'compact_start') handlers.onCompactStart?.(data.tokens_before ?? 0)
+      else if (event === 'compact_end') handlers.onCompactEnd?.(!!data.ok)
+      else if (event === 'done') handlers.onDone?.(data.message_id ?? '')
+      else if (event === 'error') handlers.onError?.(data.fail_code ?? 'AI_CALL_FAILED')
+    }
+  }
 }
 
 export default api

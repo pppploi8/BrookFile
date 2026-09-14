@@ -1,10 +1,10 @@
 use crate::backup::{BackupManager, BackupScheduler};
+use crate::ai::AiToolRegistry;
 use crate::database::Pool;
 use crate::handlers::note_ws::NoteRoomManager;
 use crate::models::{
-    BackupRuleModel, NotebookModel, RecycleBinModel, ShareModel,
-    SystemConfigModel, UploadCacheModel, UserModel, VaultModel,
-    WebDavConfigModel, WebDavCorsModel,
+    AiModelModel, AiProviderModel, BackupRuleModel, NotebookModel, RecycleBinModel, ShareModel,
+    SystemConfigModel, UploadCacheModel, UserModel, VaultModel, WebDavConfigModel, WebDavCorsModel,
 };
 use crate::restore::RestoreManager;
 use crate::search::SearchManager;
@@ -32,6 +32,12 @@ pub struct AppState {
     pub share_model: ShareModel,
     pub webdav_config_model: WebDavConfigModel,
     pub webdav_cors_model: WebDavCorsModel,
+    pub ai_provider_model: AiProviderModel,
+    pub ai_model_model: AiModelModel,
+    pub ai_tools: Arc<AiToolRegistry>,
+    pub ai_chat_lock: Arc<tokio::sync::Mutex<()>>,
+    pub ai_page_query_pending:
+        Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
     pub note_rooms: Arc<NoteRoomManager>,
     pub cors_origins: Arc<RwLock<HashSet<String>>>,
     pub notebook_key_cache: Arc<Mutex<HashMap<String, (Vec<u8>, std::time::Instant)>>>,
@@ -71,6 +77,17 @@ impl AppState {
             share_model: ShareModel::new(&pool),
             webdav_config_model: WebDavConfigModel::new(&pool),
             webdav_cors_model,
+            ai_provider_model: AiProviderModel::new(&pool),
+            ai_model_model: AiModelModel::new(&pool),
+            ai_tools: {
+                let registry = AiToolRegistry::new();
+                registry.register(Arc::new(
+                    crate::ebook::ai_tools::EbookToolProvider::new(&pool),
+                ));
+                Arc::new(registry)
+            },
+            ai_chat_lock: Arc::new(tokio::sync::Mutex::new(())),
+            ai_page_query_pending: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             note_rooms,
             cors_origins,
             notebook_key_cache: Arc::new(Mutex::new(HashMap::new())),

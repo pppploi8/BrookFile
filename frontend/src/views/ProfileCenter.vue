@@ -191,6 +191,40 @@
           </div>
         </el-tab-pane>
 
+        <el-tab-pane :label="t('profile.aiChat')" name="aichat">
+          <div class="tab-content">
+            <div class="ebook-setting">
+              <el-form label-position="top">
+                <el-form-item :label="t('profile.aiChatStoragePath')">
+                  <FolderSelect v-model="aiChatPath" :placeholder="t('profile.aiChatStoragePathPlaceholder')" />
+                </el-form-item>
+              </el-form>
+              <div class="ebook-actions">
+                <el-button type="primary" :loading="aiChatSaving" @click="saveAiChatPath">
+                  {{ hasAiChatPath ? t('profile.aiChatUpdate') : t('profile.aiChatEnable') }}
+                </el-button>
+                <el-button v-if="hasAiChatPath" type="danger" :loading="aiChatSaving" @click="clearAiChatPath">
+                  {{ t('profile.aiChatDisable') }}
+                </el-button>
+              </div>
+              <el-alert
+                v-if="!hasAiChatPath"
+                type="info"
+                :closable="false"
+                :title="t('profile.aiChatDisabledTip')"
+                class="ebook-alert"
+              />
+              <el-alert
+                v-else
+                type="success"
+                :closable="false"
+                :title="t('profile.aiChatEnabledTip')"
+                class="ebook-alert"
+              />
+            </div>
+          </div>
+        </el-tab-pane>
+
         <el-tab-pane :label="t('profile.cloudBackup')" name="backup" style="height: 100%">
           <div class="tab-content backup-content">
             <div class="backup-toolbar">
@@ -518,7 +552,7 @@ import { useUserStore } from '@/stores/user'
 import BackupLogDrawer from '@/components/BackupLogDrawer.vue'
 import RestoreDrawer from '@/components/RestoreDrawer.vue'
 import FolderSelect from '@/components/FolderSelect.vue'
-import { uploadAvatar, fetchAvatar, deleteAvatar, changePassword, listBackupRules, getBackupRule, createBackupRule, updateBackupRule, deleteBackupRule, updateFeatureOrder, setEbookPath, listWebDavConfigs, createWebDavConfig, updateWebDavConfig, deleteWebDavConfig, listWebDavCors, saveWebDavCors, listSessions, updateSessionName, revokeSession } from '@/api/system'
+import { uploadAvatar, fetchAvatar, deleteAvatar, changePassword, listBackupRules, getBackupRule, createBackupRule, updateBackupRule, deleteBackupRule, updateFeatureOrder, setEbookPath, setAiChatPath, listWebDavConfigs, createWebDavConfig, updateWebDavConfig, deleteWebDavConfig, listWebDavCors, saveWebDavCors, listSessions, updateSessionName, revokeSession } from '@/api/system'
 import type { SessionInfo } from '@/api/system'
 import router from '@/router'
 
@@ -677,6 +711,50 @@ const clearEbookPath = async () => {
     // 失败提示由请求层统一处理
   } finally {
     ebookSaving.value = false
+  }
+}
+
+const aiChatPath = ref(userStore.user?.ai_chat_path || '')
+const aiChatSaving = ref(false)
+const hasAiChatPath = computed(() => !!userStore.user?.ai_chat_path)
+
+const saveAiChatPath = async () => {
+  if (!aiChatPath.value.trim()) {
+    ElMessage.error({ __key: 'profile.aiChatPathRequired' })
+    return
+  }
+  aiChatSaving.value = true
+  try {
+    const res = await setAiChatPath(aiChatPath.value.trim())
+    if (res.success) {
+      userStore.setAiChatPath(aiChatPath.value.trim())
+      ElMessage.success({ __key: 'profile.aiChatEnabledSuccess' })
+    }
+  } catch {
+    // 失败提示由请求层统一处理
+  } finally {
+    aiChatSaving.value = false
+  }
+}
+
+const clearAiChatPath = async () => {
+  try {
+    await ElMessageBox.confirm(t('profile.aiChatDisableConfirm'), t('common.confirm'), { type: 'warning' })
+  } catch {
+    return
+  }
+  aiChatSaving.value = true
+  try {
+    const res = await setAiChatPath('')
+    if (res.success) {
+      userStore.setAiChatPath('')
+      aiChatPath.value = ''
+      ElMessage.success({ __key: 'profile.aiChatDisabledSuccess' })
+    }
+  } catch {
+    // 失败提示由请求层统一处理
+  } finally {
+    aiChatSaving.value = false
   }
 }
 

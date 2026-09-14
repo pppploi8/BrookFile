@@ -869,3 +869,59 @@ pub async fn set_ebook_path(
         Err(e) => internal_error_response("/api/user/set_ebook_path", &e),
     }
 }
+
+#[derive(Debug, Deserialize)]
+pub struct SetAiChatPathRequest {
+    pub ai_chat_path: String,
+}
+
+pub async fn set_ai_chat_path(
+    req: web::Json<SetAiChatPathRequest>,
+    http_req: HttpRequest,
+    app_state: web::Data<AppState>,
+) -> impl Responder {
+    let user_id = match get_current_user_id(&http_req, &app_state) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+
+    let root_path = match get_user_root_path(&http_req, &app_state) {
+        Ok(path) => path,
+        Err(response) => return response,
+    };
+    let root_path_obj = Path::new(&root_path);
+
+    let trimmed = req.ai_chat_path.trim().trim_start_matches('/').to_string();
+    let ai_chat_path: Option<String> = if trimmed.is_empty() {
+        None
+    } else {
+        if !is_safe_path(&trimmed) {
+            return HttpResponse::Ok().json(ApiResponse {
+                success: false,
+                fail_code: Some("PATH_INVALID".to_string()),
+            });
+        }
+        let target = root_path_obj.join(trimmed.as_str());
+        if !is_path_under_root(&target, root_path_obj) {
+            return HttpResponse::Ok().json(ApiResponse {
+                success: false,
+                fail_code: Some("PATH_INVALID".to_string()),
+            });
+        }
+        if let Err(_) = fs::create_dir_all(&target) {
+            return HttpResponse::Ok().json(ApiResponse {
+                success: false,
+                fail_code: Some("PATH_INVALID".to_string()),
+            });
+        }
+        Some(trimmed.clone())
+    };
+
+    match app_state.user_model.update_ai_chat_path(&user_id, ai_chat_path.as_deref()) {
+        Ok(_) => HttpResponse::Ok().json(ApiResponse {
+            success: true,
+            fail_code: None,
+        }),
+        Err(e) => internal_error_response("/api/user/set_ai_chat_path", &e),
+    }
+}

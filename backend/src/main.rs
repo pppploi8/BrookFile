@@ -1,3 +1,4 @@
+mod ai;
 mod config;
 mod database;
 mod handlers;

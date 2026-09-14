@@ -1,6 +1,8 @@
 pub mod system;
 pub mod init;
 pub mod auth;
+pub mod ai;
+pub mod ai_chat;
 pub mod file;
 pub mod response;
 pub mod upload;
@@ -23,6 +25,8 @@ pub mod ebook;
 pub use system::*;
 pub use init::*;
 pub use auth::*;
+pub use ai::*;
+pub use ai_chat::*;
 pub use file::*;
 pub use response::*;
 pub use upload::*;

@@ -128,7 +128,7 @@
     <el-dialog
       v-model="pickerVisible"
       :title="pickerMode === 'dir' ? t('ebook.selectDirectory') : t('ebook.selectFile')"
-      width="540px"
+      :width="pickerDialogWidth"
       class="picker-dialog"
     >
       <div class="picker-breadcrumb">
@@ -171,7 +171,7 @@
     <el-dialog
       v-model="scanVisible"
       :title="t('ebook.scanTitle')"
-      width="640px"
+      :width="scanDialogWidth"
       :close-on-click-modal="false"
     >
       <template v-if="scanPhase === 'discover'">
@@ -231,7 +231,7 @@
     <el-dialog
       v-model="downloadVisible"
       :title="t('ebook.downloadTitle')"
-      width="420px"
+      :width="downloadDialogWidth"
       :close-on-click-modal="false"
       :show-close="false"
     >
@@ -247,7 +247,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="moveVisible" :title="t('ebook.moveToCategory')" width="380px">
+    <el-dialog v-model="moveVisible" :title="t('ebook.moveToCategory')" :width="moveDialogWidth">
       <el-radio-group v-model="moveTarget" class="move-radio-group">
         <el-radio value="root">{{ t('ebook.uncategorized') }}</el-radio>
         <el-radio v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</el-radio>
@@ -261,7 +261,7 @@
     <el-dialog
       v-model="exceptionVisible"
       :title="exceptionState?.sourceStatus === 'content_changed' ? t('ebook.srcChangedTitle') : t('ebook.srcMissingTitle')"
-      width="480px"
+      :width="exceptionDialogWidth"
     >
       <p class="exception-desc">
         {{
@@ -736,6 +736,13 @@ async function handleImport() {
 }
 
 const downloadVisible = ref(false)
+const mobileDialogWidth = (desktopWidth: string) =>
+  computed(() => (isMobileLayout.value ? '92%' : desktopWidth))
+const pickerDialogWidth = mobileDialogWidth('540px')
+const scanDialogWidth = mobileDialogWidth('640px')
+const downloadDialogWidth = mobileDialogWidth('420px')
+const moveDialogWidth = mobileDialogWidth('380px')
+const exceptionDialogWidth = mobileDialogWidth('480px')
 const downloadBook = ref<ShelfBook | null>(null)
 const downloadLoaded = ref(0)
 const downloadTotal = ref(0)
@@ -1006,6 +1013,7 @@ onUnmounted(() => {
 .shelf-panel {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1466,5 +1474,15 @@ onUnmounted(() => {
 .ebooks-container.is-mobile .shelf-grid {
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 10px;
+}
+</style>
+
+<style>
+/* 移动端 Message box 适配（message box 渲染在 body 下，需全局样式） */
+@media (max-width: 767px) {
+  .el-message-box {
+    width: 92% !important;
+    max-width: 92% !important;
+  }
 }
 </style>

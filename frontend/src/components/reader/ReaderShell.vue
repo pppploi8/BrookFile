@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, ArrowRight, List, FullScreen, Loading, Setting, CollectionTag, Close } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, List, FullScreen, Loading, Setting, CollectionTag, Close, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from '@/utils/message'
 import { createEngine } from '@/reader/engines'
 import { ProgressTracker } from '@/reader/persistence'
+import AiAssistantPanel from './AiAssistantPanel.vue'
 import type { BookFormat, PageLayout, PageTurnMode, ReaderBookmark, ReaderEngine, TocItem } from '@/reader/types'
 import type { ChapterItem } from '@/api/ebook'
 import { useEbookStore } from '@/stores/ebook'
@@ -27,7 +28,9 @@ const engine = shallowRef<ReaderEngine>()
 
 const tocOpen = ref(false)
 const bookmarksOpen = ref(false)
+const aiOpen = ref(false)
 const settingsOpen = ref(false)
+const isMobile = ref(false)
 const jumpInput = ref('')
 const isFs = ref(false)
 // 全屏模式下点击阅读区域隐藏/恢复顶部标题栏与底部进度栏
@@ -63,8 +66,16 @@ onMounted(async () => {
   if (viewport.value) await eng.mount(viewport.value)
   applySavedPrefs()
   void initPersistence(eng)
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('selectionchange', onSelChange)
   document.addEventListener('fullscreenchange', onFsChange)
 })
+
+function checkMobile(): void {
+  isMobile.value = window.innerWidth <= 768
+}
 
 // 加载书签列表与进度槽：书签填充到引擎内存列表，进度恢复到最新槽位。
 async function initPersistence(eng: ReaderEngine): Promise<void> {
@@ -126,6 +137,9 @@ onUnmounted(() => {
   tracker?.dispose()
   tracker = null
   engine.value?.destroy()
+  window.removeEventListener('resize', checkMobile)
+  document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('selectionchange', onSelChange)
   document.removeEventListener('fullscreenchange', onFsChange)
 })
 
@@ -150,6 +164,220 @@ function onTocClick(item: TocItem): void {
 }
 function onBookmarkToggle(): void {
   engine.value?.toggleBookmark()
+}
+function toggleBookmarks(): void {
+  bookmarksOpen.value = !bookmarksOpen.value
+  aiOpen.value = false
+}
+function toggleAi(): void {
+  aiOpen.value = !aiOpen.value
+  bookmarksOpen.value = false
+}
+
+// —— 截图/AI 引用 —— 由 AI 侧边栏触发
+// PDF：覆盖阅读区拖拽框选，截取 pdf.js 画布对应区域返回 dataURL
+// EPUB/TXT：进入文本选择模式，返回用户选中的引用文本
+const captureActive = ref(false)
+const captureEl = ref<HTMLElement>()
+const captureRect = ref({ x: 0, y: 0, w: 0, h: 0, active: false })
+const referencing = ref(false)
+const hasSelection = ref(false)
+let captureResolve: ((v: string | null) => void) | null = null
+let captureStart: { x: number; y: number } | null = null
+
+// EPUB 正文渲染在 epubjs 的 iframe 内，选择需从 iframe 文档读取
+function iframeDoc(): Document | null {
+  if (props.format !== 'epub') return null
+  const iframe = viewport.value?.querySelector('iframe') as HTMLIFrameElement | null
+  return iframe?.contentDocument ?? null
+}
+
+function selDoc(): Document | null {
+  return iframeDoc() ?? document
+}
+
+function selectionText(): string {
+  return selDoc()?.getSelection()?.toString().trim() ?? ''
+}
+
+function hidePanel(): void {
+  if (isMobile.value) aiOpen.value = false
+  // 桌面端通过 css class（referencing/captureActive）隐藏，保持组件挂载以保留会话
+}
+
+function restorePanel(): void {
+  if (isMobile.value) aiOpen.value = true
+}
+
+function provideCapture(): Promise<string | null> {
+  hidePanel()
+  return new Promise<string | null>((resolve) => {
+    captureResolve = resolve
+    if (props.format === 'pdf') {
+      captureActive.value = true
+    } else {
+      referencing.value = true
+      iframeDoc()?.addEventListener('selectionchange', onSelChange)
+    }
+  })
+}
+
+// AI 页面查询：按 kind 分发（不做用户交互，全部离屏处理）。
+// pdf_page：渲染 PDF 页为截图，page 缺省时取当前阅读页，返回 JSON {page, image}
+async function providePageQuery(kind: string, params: Record<string, unknown>): Promise<string | null> {
+  if (kind === 'pdf_page') {
+    if (props.format !== 'pdf') return null
+    const bizId = typeof params.biz_id === 'string' ? params.biz_id : null
+    if (bizId && bizId !== props.bookId) return null
+    let page = typeof params.page === 'number' ? Math.floor(params.page) : 0
+    if (page < 1) {
+      const coord = engine.value?.getContentCoord()
+      page = coord ? parseInt(coord.split(':')[0] ?? '', 10) : 0
+    }
+    if (page < 1) return null
+    const image = await engine.value?.renderPageImage?.(page)
+    if (!image) return null
+    return JSON.stringify({ page, image })
+  }
+  return null
+}
+
+function cancelCapture(): void {
+  captureStart = null
+  captureRect.value = { x: 0, y: 0, w: 0, h: 0, active: false }
+  captureActive.value = false
+  captureResolve?.(null)
+  restorePanel()
+}
+
+function onCaptureDown(e: PointerEvent): void {
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  if (!captureEl.value) return
+  const r = captureEl.value.getBoundingClientRect()
+  captureStart = { x: e.clientX - r.left, y: e.clientY - r.top }
+  captureRect.value = { x: captureStart.x, y: captureStart.y, w: 0, h: 0, active: true }
+}
+
+function onCaptureMove(e: PointerEvent): void {
+  if (!captureStart || !captureEl.value) return
+  const r = captureEl.value.getBoundingClientRect()
+  const x = e.clientX - r.left
+  const y = e.clientY - r.top
+  captureRect.value = {
+    x: Math.min(captureStart.x, x),
+    y: Math.min(captureStart.y, y),
+    w: Math.abs(x - captureStart.x),
+    h: Math.abs(y - captureStart.y),
+    active: true,
+  }
+}
+
+async function onCaptureUp(): Promise<void> {
+  if (!captureStart) return
+  const rect = captureRect.value
+  captureStart = null
+  if (rect.w < 8 || rect.h < 8) {
+    cancelCapture()
+    return
+  }
+  const vp = viewport.value
+  const ol = captureEl.value
+  if (!vp || !ol) {
+    cancelCapture()
+    return
+  }
+  try {
+    const dataUrl = capturePdfRegion(rect, vp, ol)
+    if (!dataUrl) throw new Error('empty')
+    captureActive.value = false
+    captureRect.value = { x: 0, y: 0, w: 0, h: 0, active: false }
+    captureResolve?.(dataUrl)
+    restorePanel()
+  } catch {
+    captureResolve?.(null)
+    captureActive.value = false
+    restorePanel()
+  }
+  captureResolve = null
+}
+
+// 从 pdf.js 渲染的画布中抠取选区像素，避免整页 DOM 截图
+function capturePdfRegion(
+  rect: { x: number; y: number; w: number; h: number },
+  vp: HTMLElement,
+  ol: HTMLElement,
+): string | null {
+  const olRect = ol.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  const out = document.createElement('canvas')
+  out.width = Math.max(1, Math.round(rect.w * dpr))
+  out.height = Math.max(1, Math.round(rect.h * dpr))
+  const ctx = out.getContext('2d')
+  if (!ctx) return null
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, out.width, out.height)
+  ctx.scale(dpr, dpr)
+
+  let hit = false
+  const canvases = Array.from(vp.querySelectorAll('canvas'))
+  for (const c of canvases) {
+    const cr = c.getBoundingClientRect()
+    const cx = cr.left - olRect.left
+    const cy = cr.top - olRect.top
+    const iw = Math.min(rect.x + rect.w, cx + cr.width) - Math.max(rect.x, cx)
+    const ih = Math.min(rect.y + rect.h, cy + cr.height) - Math.max(rect.y, cy)
+    if (iw <= 0 || ih <= 0) continue
+    hit = true
+    const sxScale = c.width / cr.width
+    const syScale = c.height / cr.height
+    ctx.drawImage(
+      c,
+      (Math.max(rect.x, cx) - cx) * sxScale,
+      (Math.max(rect.y, cy) - cy) * syScale,
+      iw * sxScale,
+      ih * syScale,
+      Math.max(rect.x, cx) - rect.x,
+      Math.max(rect.y, cy) - rect.y,
+      iw,
+      ih,
+    )
+  }
+  return hit ? out.toDataURL('image/png') : null
+}
+
+function onSelChange(): void {
+  if (!referencing.value) return
+  hasSelection.value = selectionText().length > 0
+}
+
+function confirmReference(): void {
+  const text = selectionText()
+  if (!text) {
+    cancelReference()
+    return
+  }
+  selDoc()?.getSelection()?.removeAllRanges()
+  referencing.value = false
+  hasSelection.value = false
+  restorePanel()
+  captureResolve?.(text)
+  captureResolve = null
+}
+
+function cancelReference(): void {
+  selDoc()?.getSelection()?.removeAllRanges()
+  referencing.value = false
+  hasSelection.value = false
+  restorePanel()
+  captureResolve?.(null)
+  captureResolve = null
+}
+
+function onKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') {
+    if (captureActive.value) cancelCapture()
+    else if (referencing.value) cancelReference()
+  }
 }
 function onBookmarkClick(item: ReaderBookmark): void {
   engine.value?.goToBookmark(item)
@@ -179,7 +407,7 @@ function onJump(): void {
       <span class="reader-title" :title="title">{{ title }}</span>
       <el-tag size="small" effect="plain" class="format-tag">{{ format.toUpperCase() }}</el-tag>
       <div class="spacer" />
-      <el-button v-if="state" text :title="t('reader.bookmarks')" @click="bookmarksOpen = !bookmarksOpen">
+      <el-button v-if="state" text :title="t('reader.bookmarks')" @click="toggleBookmarks">
         <el-icon><CollectionTag /></el-icon>
       </el-button>
       <el-button v-if="showToc" text :title="t('reader.toc')" @click="tocOpen = !tocOpen">
@@ -187,6 +415,26 @@ function onJump(): void {
       </el-button>
       <el-button text :title="t('reader.fullscreen')" @click="toggleFullscreen">
         <el-icon><FullScreen /></el-icon>
+      </el-button>
+      <el-popover
+        v-if="isMobile && (state?.ready ?? false)"
+        v-model:visible="aiOpen"
+        placement="bottom-end"
+        :width="300"
+        trigger="click"
+        :teleported="false"
+        popper-class="reader-ai-popover"
+        @click="bookmarksOpen = false"
+      >
+        <template #reference>
+          <el-button text :title="t('reader.aiAssistant')">
+            <el-icon><ChatDotRound /></el-icon>
+          </el-button>
+        </template>
+        <AiAssistantPanel :format="format" :book-id="bookId" :capture="provideCapture" :page-query="providePageQuery" />
+      </el-popover>
+      <el-button v-else text :title="t('reader.aiAssistant')" @click="toggleAi">
+        <el-icon><ChatDotRound /></el-icon>
       </el-button>
       <el-popover
         v-if="state && state.ready"
@@ -307,6 +555,53 @@ function onJump(): void {
           <el-icon class="bm-del" @click.stop="onBookmarkRemove(b)"><Close /></el-icon>
         </div>
       </div>
+
+      <div v-if="!isMobile && aiOpen" class="reader-ai" :class="{ 'reader-ai-hidden': referencing || captureActive }">
+        <AiAssistantPanel :format="format" :book-id="bookId" :capture="provideCapture" :page-query="providePageQuery" />
+      </div>
+
+      <div
+        v-if="referencing"
+        class="reference-bar"
+        @mousedown.prevent
+        @pointerdown.prevent
+      >
+        <span>{{ t('reader.aiRefHint') }}</span>
+        <el-button
+          size="small"
+          type="primary"
+          :disabled="!hasSelection"
+          @click="confirmReference"
+        >
+          {{ t('reader.aiRefSend') }}
+        </el-button>
+        <el-button size="small" text @click="cancelReference">{{ t('common.cancel') }}</el-button>
+      </div>
+
+      <div
+        v-if="captureActive"
+        ref="captureEl"
+        class="capture-overlay"
+        @pointerdown="onCaptureDown"
+        @pointermove="onCaptureMove"
+        @pointerup="onCaptureUp"
+        @contextmenu.prevent
+      >
+        <div class="capture-hint">
+          <span>{{ t('reader.aiCaptureHint') }}</span>
+          <el-button text size="small" @click.stop="cancelCapture">{{ t('common.cancel') }}</el-button>
+        </div>
+        <div
+          v-if="captureRect.active"
+          class="capture-box"
+          :style="{
+            left: captureRect.x + 'px',
+            top: captureRect.y + 'px',
+            width: captureRect.w + 'px',
+            height: captureRect.h + 'px',
+          }"
+        />
+      </div>
     </div>
 
     <div v-show="!chromeHidden" class="reader-footer">
@@ -398,14 +693,21 @@ function onJump(): void {
 .reader-body {
   flex: 1;
   min-height: 0;
-  display: flex;
+  position: relative;
+  overflow: hidden;
 }
 .reader-toc {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
   width: 240px;
-  flex-shrink: 0;
   border-right: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
   overflow: auto;
   padding: 8px;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.06);
 }
 .toc-item {
   padding: 6px 8px;
@@ -420,8 +722,8 @@ function onJump(): void {
   background: var(--el-fill-color-light);
 }
 .reader-viewport {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   overflow: auto;
   padding: 12px;
   background: var(--el-fill-color-blank);
@@ -463,11 +765,80 @@ function onJump(): void {
   flex-shrink: 0;
 }
 .reader-bookmarks {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 5;
   width: 240px;
-  flex-shrink: 0;
   border-left: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
   overflow: auto;
   padding: 8px;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+}
+.reader-ai {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 5;
+  width: 320px;
+  border-left: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+  overflow: auto;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+}
+.reader-ai-hidden {
+  display: none;
+}
+.capture-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.05);
+  cursor: crosshair;
+  touch-action: none;
+}
+.reference-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.capture-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.capture-box {
+  position: absolute;
+  border: 1.5px solid var(--el-color-primary);
+  background: rgba(64, 158, 255, 0.12);
+  pointer-events: none;
 }
 .panel-section-title {
   font-size: 12px;
@@ -536,5 +907,11 @@ function onJump(): void {
 <style>
 .reader-settings-popover .el-button + .el-button {
   margin-left: 0;
+}
+.reader-ai-popover {
+  height: 70vh;
+  height: 70dvh;
+  padding: 0;
+  overflow: hidden;
 }
 </style>
